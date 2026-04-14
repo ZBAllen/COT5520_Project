@@ -115,7 +115,8 @@ class VoxelGrid:
 
     def can_build(self,
                   voxel: tuple[int, int, int],
-                  voxel_index: int, robots: list[Robot],
+                  voxel_index: int,
+                  robots: list[Robot],
                   component_order: list[tuple[int, int, int]]):
         """Returns if the given voxel can be built."""
 
@@ -123,19 +124,22 @@ class VoxelGrid:
 
         # Must be part of structure
         if voxel not in self.target:
+            print("not part of struct")
             return False
 
         # Already built
         if voxel in self.built:
+            print("already built")
             return False
 
         # Check if previous voxel in component has been placed
         if voxel_index > 0 and component_order[voxel_index - 1] not in self.built:
+            print("prev not placed")
             return False
 
-        # No robot standing there currently
-        if voxel in [robot.position for robot in robots]:
-            return False
+        # # No robot standing there currently
+        # if voxel in [robot.position for robot in robots]:
+        #     return False
 
         # Check all 6 directions
         neighbors = [
@@ -144,20 +148,23 @@ class VoxelGrid:
             (x, y, z + 1), (x, y, z - 1)
         ]
 
+        if neighbors[0] in self.built and neighbors[1] in self.built:
+            print("tight build A")
+            return False
+
+        if neighbors[2] in self.built and neighbors[3] in self.built:
+            print("tight build B")
+            return False
+
+        if neighbors[4] in self.built and neighbors[5] in self.built:
+            print("tight build C")
+            return False
+
         has_neighbor = False
 
         for n in neighbors:
             if n in self.built:
                 has_neighbor = True
-
-        if neighbors[0] in self.built and neighbors[1] in self.built:
-            return False
-
-        if neighbors[2] in self.built and neighbors[3] in self.built:
-            return False
-
-        if neighbors[4] in self.built and neighbors[5] in self.built:
-            return False
 
         if has_neighbor:
             return True
@@ -165,5 +172,7 @@ class VoxelGrid:
         # If the voxel has no neighbors and is on the ground level, it's placeable.
         if z == 0:
             return True
+
+        print("no neighbors and not on floor")
 
         return False
