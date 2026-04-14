@@ -1,5 +1,6 @@
 import heapq
-from src.config import GRID_SIZE
+from src.config import GRID_SIZE, DEPOT_POS
+
 
 def heuristic(current_pos: tuple[int, int, int],
               target_pos: tuple[int, int, int]) -> int:
@@ -77,111 +78,121 @@ def corner_neighbors(vertex: tuple[int, int, int],
     return accessible_corners
 
 def a_star(start_pos: tuple[int, int, int],
-           target_pos: tuple[int, int, int],
+           target_vox: tuple[int, int, int],
            built_voxels: set[tuple[int, int, int]]) -> list[tuple[int, int, int]]:
     """
     A* with obstacle avoidance for built structure.
 
     Args:
         start_pos: The starting position to find a path from.
-        target_pos: The target position to find a path to.
+        target_vox: The target position to find a path to.
         built_voxels: The set of voxels that are already built.
 
     Returns:
         The path from start_pos to target_pos as a set of ordered voxel positions.
     """
 
-    # Priority queue stores (f_score, position) pairs
-    # f_score = g_score + heuristic, prioritizes lower cost paths
-    open_set = [(0, start_pos)]
+    if target_vox == DEPOT_POS:
+        target_pos_neighbors = [target_vox]
 
-    # Maps each position to the position it came from (for path reconstruction)
-    position_came_from = {}
+    else:
+        target_pos_neighbors = neighbors(target_vox)
 
-    # Maps each position to its actual cost from start
-    position_cost_from_start = {start_pos: 0}
+        target_pos_neighbors.extend(corner_neighbors(target_vox, target_pos_neighbors, built_voxels))
 
-    # Set of positions already fully evaluated
-    closed_positions = set()
+    for target_pos in target_pos_neighbors:
 
-    while open_set:
-        # Pop position with lowest f-score from priority queue
-        _, current_pos = heapq.heappop(open_set)
+        # Priority queue stores (f_score, position) pairs
+        # f_score = g_score + heuristic, prioritizes lower cost paths
+        open_set = [(0, start_pos)]
 
-        # Skip if already processed
-        if current_pos in closed_positions:
-            continue
+        # Maps each position to the position it came from (for path reconstruction)
+        position_came_from = {}
 
-        closed_positions.add(current_pos)
+        # Maps each position to its actual cost from start
+        position_cost_from_start = {start_pos: 0}
 
-        # If we reached the goal, reconstruct and return the path
-        if current_pos == target_pos:
-            reconstructed_path = []
+        # Set of positions already fully evaluated
+        closed_positions = set()
 
-            while current_pos in position_came_from:
-                reconstructed_path.append(current_pos)
+        while open_set:
+            # Pop position with lowest f-score from priority queue
+            _, current_pos = heapq.heappop(open_set)
 
-                current_pos = position_came_from[current_pos]
-
-            return list(reversed(reconstructed_path))
-
-        current_pos_neighbors = neighbors(current_pos)
-
-        current_pos_neighbors.extend(corner_neighbors(current_pos, current_pos_neighbors, built_voxels))    # Determines voxels around corners that can be walked to.
-
-        # Explore all neighboring positions
-        for neighbor_pos in current_pos_neighbors:
-            # Skip neighbors already fully evaluated
-            if neighbor_pos in closed_positions:
+            # Skip if already processed
+            if current_pos in closed_positions:
                 continue
 
-            neighbor_x, neighbor_y, neighbor_z = neighbor_pos
+            closed_positions.add(current_pos)
 
-            # Skip neighbors outside grid bounds
-            if not (0 <= neighbor_x < GRID_SIZE[0] and
-                    0 <= neighbor_y < GRID_SIZE[1] and
-                    0 <= neighbor_z < GRID_SIZE[2]):
-                continue
+            # If we reached the goal, reconstruct and return the path
+            if current_pos == target_pos:
+                reconstructed_path = []
 
-            # Determine if neighbor is walkable:
-            # - Built voxels act as surfaces (robots can walk on them, not through them)
-            # - Ground level (z=0) is always walkable (unless obstructed by a built voxel)
-            # - Empty space above ground is not walkable without an adjacent built voxel
+                while current_pos in position_came_from:
+                    reconstructed_path.append(current_pos)
 
-            if neighbor_pos in built_voxels:
-                continue
+                    current_pos = position_came_from[current_pos]
 
-            is_walkable = False
+                return list(reversed(reconstructed_path))
 
-            if neighbor_z == 0:
-                is_walkable = True
+            current_pos_neighbors = neighbors(current_pos)
 
-            else:
-                neighbors_neighbors = neighbors(neighbor_pos)
+            current_pos_neighbors.extend(corner_neighbors(current_pos, current_pos_neighbors, built_voxels))    # Determines voxels around corners that can be walked to.
 
-                for neighbors_neighbor in neighbors_neighbors:
-                    if neighbors_neighbor in built_voxels:
-                        is_walkable = True
+            # Explore all neighboring positions
+            for neighbor_pos in current_pos_neighbors:
+                # Skip neighbors already fully evaluated
+                if neighbor_pos in closed_positions:
+                    continue
 
-                        break
+                neighbor_x, neighbor_y, neighbor_z = neighbor_pos
 
-            if not is_walkable:
-                continue
+                # Skip neighbors outside grid bounds
+                if not (0 <= neighbor_x < GRID_SIZE[0] and
+                        0 <= neighbor_y < GRID_SIZE[1] and
+                        0 <= neighbor_z < GRID_SIZE[2]):
+                    continue
 
-            # Calculate cost to move this neighbor (always 1 step)
-            cost = position_cost_from_start[current_pos] + 1
+                # Determine if neighbor is walkable:
+                # - Built voxels act as surfaces (robots can walk on them, not through them)
+                # - Ground level (z=0) is always walkable (unless obstructed by a built voxel)
+                # - Empty space above ground is not walkable without an adjacent built voxel
 
-            # If this path to neighbor is better than previously found path, update it
-            if neighbor_pos not in position_cost_from_start or cost < position_cost_from_start[neighbor_pos]:
-                position_cost_from_start[neighbor_pos] = cost
+                if neighbor_pos in built_voxels:
+                    continue
 
-                # Add neighbor to priority queue with f_score = g + heuristic
-                f_score = cost + heuristic(neighbor_pos, target_pos)
+                is_walkable = False
 
-                heapq.heappush(open_set, (f_score, neighbor_pos))
+                if neighbor_z == 0:
+                    is_walkable = True
 
-                # Record where we came from
-                position_came_from[neighbor_pos] = current_pos
+                else:
+                    neighbors_neighbors = neighbors(neighbor_pos)
+
+                    for neighbors_neighbor in neighbors_neighbors:
+                        if neighbors_neighbor in built_voxels:
+                            is_walkable = True
+
+                            break
+
+                if not is_walkable:
+                    continue
+
+                # Calculate cost to move this neighbor (always 1 step)
+                cost = position_cost_from_start[current_pos] + 1
+
+                # If this path to neighbor is better than previously found path, update it
+                if neighbor_pos not in position_cost_from_start or cost < position_cost_from_start[neighbor_pos]:
+                    position_cost_from_start[neighbor_pos] = cost
+
+                    # Add neighbor to priority queue with f_score = g + heuristic
+                    f_score = cost + heuristic(neighbor_pos, target_pos)
+
+                    heapq.heappush(open_set, (f_score, neighbor_pos))
+
+                    # Record where we came from
+                    position_came_from[neighbor_pos] = current_pos
 
     return []
 
