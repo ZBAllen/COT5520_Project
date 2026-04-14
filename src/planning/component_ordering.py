@@ -1,203 +1,127 @@
 import networkx as nx
 from collections import deque
 
-from src.pathfinding.a_star import corner_neighbors, neighbors
-
-
 def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
                            dependency_graph: nx.DiGraph,
                            current_component_id: int) -> list[tuple[int, int, int]]:
     """
-    Order voxels within a component using BFS from predecessor neighbors,
-    then fix no-tight-building constraint violations.
-
-    Creates an ordering of voxels that respects the no-tight-building constraint,
-    which states that a voxel cannot pass through a unit-wide gap between two
-    other voxels. This is enforced by ensuring voxels are placed in an order
-    where each voxel has support from previously placed voxels.
-
-    Args:
-        voxels_in_component: Set of 3D voxel coordinates within this component.
-        dependency_graph: NetworkX directed graph of component dependencies.
-        current_component_id: ID of the current component being ordered.
-
-    Returns:
-        List of voxels coordinates in valid build order for this component.
+    Order voxels using BFS, then fix no-tight-building violations by flipping edges.
+    Follows ARMADAS algorithm from the research paper.
     """
-
-    # Find voxels in predecessor components that neighbor voxels in current component
-    starting_voxels = []
     predecessor_voxels = set()
-
     for predecessor_component_id in dependency_graph.predecessors(current_component_id):
         predecessor_voxels.update(dependency_graph.nodes[predecessor_component_id]['voxels'])
 
-    # Identify voxels that are adjacent to predecessor voxels (good starting points)
+    # Find starting voxels adjacent to predecessors
+    starting_voxels = []
     for voxel in voxels_in_component:
         x, y, z = voxel
-
-        neighbors = [
-            (x + 1, y, z), (x - 1, y, z),
-            (x, y + 1, z), (x, y - 1, z),
-            (x, y, z + 1), (x, y, z - 1)
-        ]
-
+        neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+                     (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
         if any(neighbor in predecessor_voxels for neighbor in neighbors):
             starting_voxels.append(voxel)
 
-    # Fallback: use ground-level voxels as starting points
     if not starting_voxels:
-        starting_voxels = [voxel for voxel in voxels_in_component if voxel[2] == 0]
-
-    # Final fallback: pick any voxel if no ground voxels exist
+        starting_voxels = [v for v in voxels_in_component if v[2] == 0]
     if not starting_voxels:
         starting_voxels = [next(iter(voxels_in_component))]
 
-    # BFS from starting voxels to create initial ordering
-    visited_voxels = set()
-    initial_ordering = []
-    bfs_queue = deque(starting_voxels)
+    # Step 1: BFS to create initial ordering graph [1]
+    visited = set()
+    bfs_order = []
+    queue = deque(starting_voxels)
 
-    while bfs_queue:
-        voxel = bfs_queue.popleft()
-
-        if voxel in visited_voxels or voxel not in voxels_in_component:
+    while queue:
+        voxel = queue.popleft()
+        if voxel in visited or voxel not in voxels_in_component:
             continue
-
-        visited_voxels.add(voxel)
-        initial_ordering.append(voxel)
+        visited.add(voxel)
+        bfs_order.append(voxel)
 
         x, y, z = voxel
-
-        neighbors = [
-            (x + 1, y, z), (x - 1, y, z),
-            (x, y + 1, z), (x, y - 1, z),
-            (x, y, z + 1), (x, y, z - 1)
-        ]
-
+        neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+                     (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
         for neighbor in neighbors:
-            if neighbor in voxels_in_component and neighbor not in visited_voxels:
-                bfs_queue.append(neighbor)
+            if neighbor in voxels_in_component and neighbor not in visited:
+                queue.append(neighbor)
 
-    # Fix no-tight-building constraint violations by enforcing support requirements
-    # Repeatedly place voxels that support, ensuring the constraint is never violated
-    final_ordering = []
-    unordered_voxels = set(initial_ordering)
-    built_voxels = set(predecessor_voxels)  # Start with predecessor voxels as "built"
+    # Create ordering graph: edge from earlier to later voxel in BFS order
+    ordering_graph = nx.DiGraph()
+    for voxel in bfs_order:
+        ordering_graph.add_node(voxel)
 
-    while unordered_voxels:
-        # Find voxels that can be placed without violating constraint
-        placeable_voxels = []
+    for i, voxel in enumerate(bfs_order):
+        x, y, z = voxel
+        neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+                     (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+        for neighbor in neighbors:
+            if neighbor in voxels_in_component:
+                neighbor_idx = bfs_order.index(neighbor)
+                if neighbor_idx > i:
+                    ordering_graph.add_edge(voxel, neighbor)
 
-        for voxel in unordered_voxels:
+    # Step 2: Fix no-tight-building constraint violations [1]
+    # Repeatedly find violating voxels and flip their incoming edges
+    max_iterations = len(voxels_in_component) * 10
+    iteration = 0
+
+    while iteration < max_iterations:
+        iteration += 1
+
+        # Find all voxels that violate the constraint
+        violations = []
+        for voxel in voxels_in_component:
             x, y, z = voxel
+            neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+                         (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
 
-            # Ground voxels (z=0) are always placeable
-            if z == 0:
-                placeable_voxels.append(voxel)
+            # Check each axis for violations [1]
+            axis_pairs = [(0, 1), (2, 3), (4, 5)]
+            for idx1, idx2 in axis_pairs:
+                n1, n2 = neighbors[idx1], neighbors[idx2]
+                if n1 in voxels_in_component and n2 in voxels_in_component:
+                    # Violation: voxel has incoming edges from both axis neighbors
+                    if ordering_graph.has_edge(n1, voxel) and ordering_graph.has_edge(n2, voxel):
+                        violations.append(voxel)
+                        break
 
-                continue
+        if not violations:
+            break
 
-            # Check if supported by neighbors without violating no-tight-build constraint
-            neighbors = [
-                (x + 1, y, z), (x - 1, y, z),
-                (x, y + 1, z), (x, y - 1, z),
-                (x, y, z + 1), (x, y, z - 1)
-            ]
+        # Pick violation with minimum (z, y, x) for determinism [1]
+        violating_voxel = min(violations, key=lambda v: (v[2], v[1], v[0]))
 
-            has_neighbor = False
+        x, y, z = violating_voxel
+        neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+                     (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
 
-            for n in neighbors:
-                if n in built_voxels:
-                    has_neighbor = True
+        # Find axis with violation and flip edges [1]
+        axis_pairs = [(0, 1), (2, 3), (4, 5)]
+        for idx1, idx2 in axis_pairs:
+            n1, n2 = neighbors[idx1], neighbors[idx2]
+            if n1 in voxels_in_component and n2 in voxels_in_component:
+                if ordering_graph.has_edge(n1, violating_voxel) and \
+                        ordering_graph.has_edge(n2, violating_voxel):
+                    # Flip: remove incoming edges, add outgoing edges [1]
+                    ordering_graph.remove_edge(n1, violating_voxel)
+                    ordering_graph.remove_edge(n2, violating_voxel)
+                    ordering_graph.add_edge(violating_voxel, n1)
+                    ordering_graph.add_edge(violating_voxel, n2)
+                    break
 
-            if neighbors[0] in built_voxels and neighbors[1] in built_voxels:
-                continue
-
-            if neighbors[2] in built_voxels and neighbors[3] in built_voxels:
-                continue
-
-            if neighbors[4] in built_voxels and neighbors[5] in built_voxels:
-                continue
-
-            if not has_neighbor:
-                continue
-
-            placeable_voxels.append(voxel)
-
-        # If no voxels can be placed, we have a deadlock: pick voxel with lowest coordinates
-        # as tiebreaker (z-coordinate first, then y, then x) as per the ARMADAS paper.
-        if not placeable_voxels:
-            voxel_with_min_coords = min(unordered_voxels, key=lambda v: (v[2], v[1], v[0]))
-
-            placeable_voxels = [voxel_with_min_coords]
-
-        # Add all placeable voxels to final ordering and mark as built
-        for voxel in placeable_voxels:
-            final_ordering.append(voxel)
-            built_voxels.add(voxel)
-            unordered_voxels.remove(voxel)
+    # Topological sort to get final ordering
+    try:
+        final_ordering = list(nx.topological_sort(ordering_graph))
+    except nx.NetworkXUnfeasible:
+        # If cycle exists, extract DAG
+        dag = nx.DiGraph(ordering_graph)
+        while True:
+            try:
+                nx.find_cycle(dag)
+                cycle = nx.find_cycle(dag)
+                dag.remove_edge(cycle[0][0], cycle[0][1])
+            except nx.NetworkXNoCycle:
+                break
+        final_ordering = list(nx.topological_sort(dag))
 
     return final_ordering
-
-# def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
-#                            previous_component_voxel_ordering: list[tuple[int, int, int]] = None) -> list[tuple[int, int, int]]:
-#     """
-#     Returns a build order for voxels in a component that satisfies the no-tight-build constraint.
-#     """
-#
-#     voxels = list(voxels_in_component)
-#
-#     def is_valid_addition(voxel, order):
-#         """Check if adding this voxel violates the no-tight-build constraint."""
-#
-#         for dim in range(3):
-#             neighbor1 = tuple(voxel[i] + (1 if i == dim else 0) for i in range(3))
-#             neighbor2 = tuple(voxel[i] - (1 if i == dim else 0) for i in range(3))
-#
-#             if neighbor1 in order and neighbor2 in order:
-#                 return False
-#
-#         return True
-#
-#     def backtrack(order):
-#         if len(order) == len(voxels):
-#             return order
-#
-#         for voxel in voxels:
-#             if voxel not in order:
-#                 order.append(voxel)
-#
-#                 if is_valid_addition(voxel, set(order)):
-#                     intermediate_result = backtrack(order)
-#
-#                     if intermediate_result is not None:
-#                         return intermediate_result
-#
-#                 order.pop()
-#
-#         return None
-#
-#     # Try starting from each voxel that could be reachable from a previous component
-#     for start_voxel in voxels:
-#         # print("Trying a new start voxel...")
-#         is_reachable = False
-#
-#         if not previous_component_voxel_ordering:
-#             is_reachable = True
-#
-#         else:
-#             for prev_voxel in reversed(previous_component_voxel_ordering):
-#                 if start_voxel in corner_neighbors(prev_voxel, neighbors(prev_voxel), set(previous_component_voxel_ordering)):
-#                     is_reachable = True
-#
-#                     break
-#
-#         if is_reachable:
-#             # print("Getting build order for start voxel...")
-#             result = backtrack([start_voxel])
-#
-#             if result is not None:
-#                 return result
-#
-#     return []
