@@ -1,6 +1,5 @@
 import random
 import time
-import networkx as nx
 from collections import defaultdict
 import matplotlib.pyplot as plt
 
