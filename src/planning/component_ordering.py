@@ -140,6 +140,164 @@ from src.pathfinding.a_star import corner_neighbors, neighbors
 #
 #     return final_ordering
 
+# def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
+#                            dependency_graph: nx.DiGraph,
+#                            current_component_id: int) -> list[tuple[int, int, int]]:
+#     """
+#     Order voxels within a component using BFS from predecessor neighbors,
+#     then fix no-tight-building constraint violations by flipping edges.
+#
+#     Args:
+#         voxels_in_component: Set of 3D voxel coordinates within this component.
+#         dependency_graph: NetworkX directed graph of component dependencies.
+#         current_component_id: ID of the current component being ordered.
+#
+#     Returns:
+#         List of voxel coordinates in valid build order for this component.
+#     """
+#     # Find voxels in predecessor components
+#     predecessor_voxels = set()
+#     for predecessor_component_id in dependency_graph.predecessors(current_component_id):
+#         predecessor_voxels.update(dependency_graph.nodes[predecessor_component_id]['voxels'])
+#
+#     # Find starting voxels adjacent to predecessors
+#     starting_voxels = []
+#     for voxel in voxels_in_component:
+#         x, y, z = voxel
+#         neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+#                      (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+#         if any(neighbor in predecessor_voxels for neighbor in neighbors):
+#             starting_voxels.append(voxel)
+#
+#     # Fallbacks for starting voxels
+#     if not starting_voxels:
+#         starting_voxels = [v for v in voxels_in_component if v[2] == 0]
+#     if not starting_voxels:
+#         starting_voxels = [next(iter(voxels_in_component))]
+#
+#     # BFS to create initial ordering graph
+#     visited = set()
+#     bfs_order = []
+#     queue = deque(starting_voxels)
+#
+#     while queue:
+#         voxel = queue.popleft()
+#         if voxel in visited or voxel not in voxels_in_component:
+#             continue
+#         visited.add(voxel)
+#         bfs_order.append(voxel)
+#
+#         x, y, z = voxel
+#         neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+#                      (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+#         for neighbor in neighbors:
+#             if neighbor in voxels_in_component and neighbor not in visited:
+#                 queue.append(neighbor)
+#
+#     # Create initial ordering graph: edge from earlier to later voxel
+#     ordering_graph = nx.DiGraph()
+#     for voxel in bfs_order:
+#         ordering_graph.add_node(voxel)
+#
+#     for i, voxel in enumerate(bfs_order):
+#         x, y, z = voxel
+#         neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+#                      (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+#         for neighbor in neighbors:
+#             if neighbor in voxels_in_component:
+#                 neighbor_idx = bfs_order.index(neighbor)
+#                 if neighbor_idx > i:
+#                     ordering_graph.add_edge(voxel, neighbor)
+#
+#     # Fix no-tight-building violations by flipping edges
+#     max_iterations = len(voxels_in_component) * 10
+#     iteration_count = 0
+#
+#     while iteration_count < max_iterations:
+#         iteration_count += 1
+#
+#         # Check for cycles
+#         try:
+#             nx.find_cycle(ordering_graph)
+#             # If we get here, there's a cycle. Remove it by breaking the most recent flip.
+#             # For now, we'll just break out and use topological sort on the DAG we can extract
+#             break
+#         except nx.NetworkXNoCycle:
+#             # No cycle, continue
+#             pass
+#
+#         # Find all violations
+#         violations = []
+#         for voxel in voxels_in_component:
+#             x, y, z = voxel
+#             neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+#                          (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+#
+#             # Check each axis for tight gaps
+#             axis_pairs = [
+#                 (neighbors[0], neighbors[1]),  # x-axis
+#                 (neighbors[2], neighbors[3]),  # y-axis
+#                 (neighbors[4], neighbors[5])  # z-axis
+#             ]
+#
+#             for n1, n2 in axis_pairs:
+#                 if n1 in voxels_in_component and n2 in voxels_in_component:
+#                     # voxel is in the middle of n1 and n2
+#                     # Violation: voxel depends on both n1 and n2
+#                     has_edge_from_n1 = ordering_graph.has_edge(n1, voxel)
+#                     has_edge_from_n2 = ordering_graph.has_edge(n2, voxel)
+#
+#                     if has_edge_from_n1 and has_edge_from_n2:
+#                         violations.append(voxel)
+#                         break
+#
+#         if not violations:
+#             break
+#
+#         # Pick violation with minimum (z, y, x)
+#         violating_voxel = min(violations, key=lambda v: (v[2], v[1], v[0]))
+#
+#         x, y, z = violating_voxel
+#         neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+#                      (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+#
+#         # Find the axis where violation occurs and flip edges
+#         axis_pairs = [
+#             (neighbors[0], neighbors[1]),  # x-axis
+#             (neighbors[2], neighbors[3]),  # y-axis
+#             (neighbors[4], neighbors[5])  # z-axis
+#         ]
+#
+#         for n1, n2 in axis_pairs:
+#             if n1 in voxels_in_component and n2 in voxels_in_component:
+#                 if ordering_graph.has_edge(n1, violating_voxel) and \
+#                         ordering_graph.has_edge(n2, violating_voxel):
+#                     # Flip edges: remove incoming, add outgoing
+#                     ordering_graph.remove_edge(n1, violating_voxel)
+#                     ordering_graph.remove_edge(n2, violating_voxel)
+#                     ordering_graph.add_edge(violating_voxel, n1)
+#                     ordering_graph.add_edge(violating_voxel, n2)
+#                     break
+#
+#     # Remove cycles if they exist by extracting largest DAG
+#     try:
+#         final_ordering = list(nx.topological_sort(ordering_graph))
+#     except nx.NetworkXUnfeasible:
+#         # Extract a DAG from the cyclic graph
+#         largest_dag = nx.DiGraph(ordering_graph)
+#         while True:
+#             try:
+#                 nx.find_cycle(largest_dag)
+#                 # Remove edge from cycle
+#                 cycle = nx.find_cycle(largest_dag)
+#                 largest_dag.remove_edge(cycle[0][0], cycle[0][1])
+#             except nx.NetworkXNoCycle:
+#                 break
+#         final_ordering = list(nx.topological_sort(largest_dag))
+#
+#     return final_ordering
+
+
 def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
                            dependency_graph: nx.DiGraph,
                            current_component_id: int) -> list[tuple[int, int, int]]:
@@ -219,8 +377,7 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
         # Check for cycles
         try:
             nx.find_cycle(ordering_graph)
-            # If we get here, there's a cycle. Remove it by breaking the most recent flip.
-            # For now, we'll just break out and use topological sort on the DAG we can extract
+            # If we get here, there's a cycle. Break out and handle it later.
             break
         except nx.NetworkXNoCycle:
             # No cycle, continue
@@ -233,21 +390,22 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
             neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
                          (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
 
-            # Check each axis for tight gaps
+            # Check each axis for tight gaps (three in a row)
             axis_pairs = [
-                (neighbors[0], neighbors[1]),  # x-axis
-                (neighbors[2], neighbors[3]),  # y-axis
-                (neighbors[4], neighbors[5])  # z-axis
+                (0, 1),  # x-axis: neighbors[0] and neighbors[1]
+                (2, 3),  # y-axis: neighbors[2] and neighbors[3]
+                (4, 5)  # z-axis: neighbors[4] and neighbors[5]
             ]
 
-            for n1, n2 in axis_pairs:
+            for idx1, idx2 in axis_pairs:
+                n1, n2 = neighbors[idx1], neighbors[idx2]
                 if n1 in voxels_in_component and n2 in voxels_in_component:
-                    # voxel is in the middle of n1 and n2
-                    # Violation: voxel depends on both n1 and n2
-                    has_edge_from_n1 = ordering_graph.has_edge(n1, voxel)
-                    has_edge_from_n2 = ordering_graph.has_edge(n2, voxel)
+                    # voxel is in the middle; check if it has edges TO both neighbors
+                    has_edge_to_n1 = ordering_graph.has_edge(voxel, n1)
+                    has_edge_to_n2 = ordering_graph.has_edge(voxel, n2)
 
-                    if has_edge_from_n1 and has_edge_from_n2:
+                    # Violation: voxel has NO edge to at least one neighbor
+                    if not has_edge_to_n1 or not has_edge_to_n2:
                         violations.append(voxel)
                         break
 
@@ -261,22 +419,30 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
         neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
                      (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
 
-        # Find the axis where violation occurs and flip edges
+        # Find the axis where violation occurs and fix it
         axis_pairs = [
-            (neighbors[0], neighbors[1]),  # x-axis
-            (neighbors[2], neighbors[3]),  # y-axis
-            (neighbors[4], neighbors[5])  # z-axis
+            (0, 1),  # x-axis
+            (2, 3),  # y-axis
+            (4, 5)  # z-axis
         ]
 
-        for n1, n2 in axis_pairs:
+        for idx1, idx2 in axis_pairs:
+            n1, n2 = neighbors[idx1], neighbors[idx2]
             if n1 in voxels_in_component and n2 in voxels_in_component:
-                if ordering_graph.has_edge(n1, violating_voxel) and \
-                        ordering_graph.has_edge(n2, violating_voxel):
-                    # Flip edges: remove incoming, add outgoing
-                    ordering_graph.remove_edge(n1, violating_voxel)
-                    ordering_graph.remove_edge(n2, violating_voxel)
-                    ordering_graph.add_edge(violating_voxel, n1)
-                    ordering_graph.add_edge(violating_voxel, n2)
+                has_edge_to_n1 = ordering_graph.has_edge(violating_voxel, n1)
+                has_edge_to_n2 = ordering_graph.has_edge(violating_voxel, n2)
+
+                if not has_edge_to_n1 or not has_edge_to_n2:
+                    # Ensure voxel → n1 and voxel → n2
+                    if not has_edge_to_n1:
+                        if ordering_graph.has_edge(n1, violating_voxel):
+                            ordering_graph.remove_edge(n1, violating_voxel)
+                        ordering_graph.add_edge(violating_voxel, n1)
+
+                    if not has_edge_to_n2:
+                        if ordering_graph.has_edge(n2, violating_voxel):
+                            ordering_graph.remove_edge(n2, violating_voxel)
+                        ordering_graph.add_edge(violating_voxel, n2)
                     break
 
     # Remove cycles if they exist by extracting largest DAG
@@ -294,6 +460,23 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
             except nx.NetworkXNoCycle:
                 break
         final_ordering = list(nx.topological_sort(largest_dag))
+
+    # Ensure first voxel connects to predecessor if predecessors exist
+    if predecessor_voxels:
+        first_voxel = final_ordering[0]
+        x, y, z = first_voxel
+        neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+                     (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+
+        if not any(neighbor in predecessor_voxels for neighbor in neighbors):
+            # Reorder: find first connected voxel and move it to front
+            for i, voxel in enumerate(final_ordering):
+                x, y, z = voxel
+                neighbors = [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
+                             (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+                if any(neighbor in predecessor_voxels for neighbor in neighbors):
+                    final_ordering[0], final_ordering[i] = final_ordering[i], final_ordering[0]
+                    break
 
     return final_ordering
 
