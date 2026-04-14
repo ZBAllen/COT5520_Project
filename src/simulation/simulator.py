@@ -97,8 +97,10 @@ class Simulator:
         return components
 
     def assign(self, robot: Robot):
+        # Get the components that are currently buildable
         available_comps = self.available_components()
 
+        # If no component available, set robot's assigned component to None and return
         if not available_comps:
             # print(f"Robot {robot.id}: No available nodes")
             robot.component = None
@@ -108,6 +110,7 @@ class Simulator:
 
         reachable_components = []
 
+        # Find the set of components that are reachable
         for component in available_comps:
             if not self.component_orderings[component]:
                 continue
@@ -137,12 +140,25 @@ class Simulator:
 
         # print(f"Robot {robot.id}: Assigned to component {best_component}")
 
+    def pickup_voxel(self, robot: Robot):
+        robot.has_voxel = True
+        self.voxels_available -= 1
+        self.voxels_in_transit += 1
+
+    def drop_voxel(self, robot: Robot):
+        robot.has_voxel = False
+        self.voxels_available += 1
+        self.voxels_in_transit -= 1
+
     def update(self):
-        for robot in self.robots:   # TODO: Would it help if a random order of robots was used every time? It would prevent the same robots from being used first and may prevent issues with blocked paths.
+        bots=self.robots.copy()
+        random.shuffle(bots)
+
+        for robot in bots:   # TODO: Would it help if a random order of robots was used every time? It would prevent the same robots from being used first and may prevent issues with blocked paths.
             # If robot doesn't have a voxel, send to voxel depot
             if not robot.has_voxel:
                 if self.voxels_available > 0:
-                    if robot.position != DEPOT_POS: # TODO: What if a robot is not at the depot, but has a path to a voxel that is not the depot?
+                    if robot.position != DEPOT_POS:
                         if not robot.path:
                             robot.path = a_star(robot.position, DEPOT_POS, self.voxel_grid.built)
 
@@ -150,11 +166,19 @@ class Simulator:
                             robot.step()
                     else:
                         # At depot, pick up voxel
-                        robot.has_voxel = True
-                        self.voxels_available -= 1
-                        self.voxels_in_transit += 1
+                        self.pickup_voxel(robot)
+
                         robot.component = None
                         robot.voxel_index = 0   # TODO: Do you need to set voxel_index to 0 here? It gets set to 0 in assign when a component becomes available.
+
+                else:
+                    # No more voxels available, return to the voxel depot and wait
+                    if robot.position != DEPOT_POS:
+                        if not robot.path:
+                            robot.path = a_star(robot.position, DEPOT_POS, self.voxel_grid.built)
+
+                        if robot.path:
+                            robot.step()
 
                 continue    # Move on to next robot
 
@@ -165,9 +189,7 @@ class Simulator:
                 # TODO: Robots shouldn't drop the voxel before reaching the storage depot (to simulate them having to put voxels back in storage).
                 # If still no assignment after trying, drop voxel and return to depot
                 if robot.component is None:
-                    robot.has_voxel = False
-                    self.voxels_in_transit -= 1
-                    self.voxels_available += 1
+                    self.drop_voxel(robot)
 
                 continue    # Move on to next robot
 
@@ -182,9 +204,8 @@ class Simulator:
             if robot.voxel_index >= len(ordered_voxels_in_component):
                 self.num_robots_assigned_to_components[robot.component] -= 1
                 robot.component = None
-                robot.has_voxel = False
-                self.voxels_in_transit -= 1
-                self.voxels_available += 1  # TODO: I added this since this condition suggests that the robot didn't get to use its voxel. Like before this needs replaced with the robot explicitly walking back to storage to return the voxel.
+
+                self.drop_voxel(robot)  # TODO: I added this since this condition suggests that the robot didn't get to use its voxel. Like before this needs replaced with the robot explicitly walking back to storage to return the voxel.
 
                 continue
 
@@ -193,9 +214,9 @@ class Simulator:
             target_voxel = ordered_voxels_in_component[robot.voxel_index]
 
             # Debugging print for target voxels at z=1 with no valid path returned by A*
-            if target_voxel[2] == 1 and a_star(robot.position, target_voxel, self.voxel_grid.built) == []:
-                print(f"Robot {robot.id} | pos={robot.position} | target_voxel={target_voxel} | can_build={self.voxel_grid.can_build(target_voxel, robot.voxel_index, self.robots, ordered_voxels_in_component)} | path={robot.path}")
-                print(self.voxel_grid.built)
+            # if target_voxel[2] == 1 and a_star(robot.position, target_voxel, self.voxel_grid.built) == []:
+            #     print(f"Robot {robot.id} | pos={robot.position} | target_voxel={target_voxel} | can_build={self.voxel_grid.can_build(target_voxel, robot.voxel_index, self.robots, ordered_voxels_in_component)} | path={robot.path}")
+            #     print(self.voxel_grid.built)
 
             valid_build_locations = self.valid_construction_locations(target_voxel)
 
@@ -219,11 +240,14 @@ class Simulator:
                 # If it can be built, update relevant lists and variables.
                 if self.voxel_grid.can_build(target_voxel, robot.voxel_index, self.robots, ordered_voxels_in_component):
                     self.voxel_grid.built.add(target_voxel)
+
                     robot.has_voxel = False
                     self.voxels_in_transit -= 1
+
                     if robot.voxel_index == 0:
                         print(f"{robot.id} says: I just placed voxel 0 of component {robot.component}")
                         print(f"Now built contains: {self.voxel_grid.built}")
+
                     robot.voxel_index = 0   # Reset voxel index
 
                     # If all voxels in the component are built, mark it as completed.
@@ -237,7 +261,7 @@ class Simulator:
         plt.ion()
 
         try:
-            while len(self.completed_components) < len(self.component_dependency_graph.nodes):
+            while len(self.completed_components) < len(self.component_dependency_graph.nodes) or not all(robot.position == DEPOT_POS for robot in self.robots):
                 self.update()
                 self.viewer.draw(self.voxel_grid, self.robots, self.voxels_available, self.voxels_in_transit)
                 time.sleep(STEP_DELAY)
