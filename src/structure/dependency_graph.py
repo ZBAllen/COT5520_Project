@@ -191,124 +191,59 @@ def no_tight_build_violated(voxel: tuple[int, int, int],
 
     return False
 
-def find_scaffolding_column_position(target_component_voxels: set[tuple[int, int, int]],
-                                     voxel_grid: VoxelGrid,
-                                     existing_scaffolding: set[tuple[int, int, int]]) -> tuple[int, int] | None:
-    max_x, max_y, max_z = __import__('src.config', fromlist=['GRID_SIZE']).GRID_SIZE
+def find_scaffolding_column_position(target_component_voxels, voxel_grid, existing_scaffolding):
+    max_x, max_y, max_z = GRID_SIZE
 
     min_z = min(v[2] for v in target_component_voxels)
+
     footprint = set((v[0], v[1]) for v in target_component_voxels)
 
-    # Also exclude (x,y) positions already used by existing scaffold columns
     existing_scaffold_footprint = set((v[0], v[1]) for v in existing_scaffolding)
 
+    # Include ALL target voxels plus existing scaffold in occupied check
     occupied = voxel_grid.target | existing_scaffolding
+
+    cx_mean = sum(fx for fx, fy in footprint) / len(footprint)
+    cy_mean = sum(fy for fx, fy in footprint) / len(footprint)
+
     max_radius = max(max_x, max_y)
 
-    for radius in range(1, max_radius + 1):
-        candidates = []
-
-        # Generate the outer ring at this radius, sorted by proximity to
-        # the centroid of the target footprint so we pick the closest valid column
-        cx_mean = sum(fx for fx, fy in footprint) / len(footprint)
-        cy_mean = sum(fy for fx, fy in footprint) / len(footprint)
-
+    for radius in range(0, max_radius + 1):
         ring = set()
-        for (fx, fy) in footprint:
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    if abs(dx) != radius and abs(dy) != radius:
-                        continue
-                    nx_, ny_ = fx + dx, fy + dy
-                    if not (0 <= nx_ < max_x and 0 <= ny_ < max_y):
-                        continue
-                    if (nx_, ny_) in footprint:
-                        continue
-                    # Exclude positions already occupied by other scaffold columns
-                    if (nx_, ny_) in existing_scaffold_footprint:
-                        continue
-                    ring.add((nx_, ny_))
 
-        # Sort ring candidates by distance to footprint centroid for determinism
-        candidates = sorted(ring, key=lambda p: abs(p[0] - cx_mean) + abs(p[1] - cy_mean))
+        for fx in range(max_x):
+            for fy in range(max_y):
+                if abs(fx - round(cx_mean)) == radius or abs(fy - round(cy_mean)) == radius:
+                    if (fx, fy) not in footprint and (fx, fy) not in existing_scaffold_footprint:
+                        ring.add((fx, fy))
+
+        candidates = sorted(ring,
+            key=lambda p: abs(p[0] - cx_mean) + abs(p[1] - cy_mean))
 
         for (cx, cy) in candidates:
             column_voxels = [(cx, cy, z) for z in range(min_z)]
+
             valid = True
+
             tentative = set(occupied)
+
             for voxel in column_voxels:
                 if voxel in tentative:
                     valid = False
+
                     break
+
                 if no_tight_build_violated(voxel, tentative):
                     valid = False
+
                     break
+
                 tentative.add(voxel)
+
             if valid:
                 return (cx, cy)
 
     return None
-
-# def find_scaffolding_column_position(target_component_voxels: set[tuple[int, int, int]],
-#                                      voxel_grid: VoxelGrid,
-#                                      existing_scaffolding: set[tuple[int, int, int]]) -> tuple[int, int] | None:
-#     """
-#     Find an (x, y) position for a scaffold column adjacent to the target component that does not conflict with target
-#     voxels and will not violate the no-tight-build constraint at any z level from 0 up to the component's minimum z - 1.
-#
-#     Args:
-#         target_component_voxels: The set of voxels in the component to be built.
-#         voxel_grid: The voxel grid being built in.
-#         existing_scaffolding: The set of voxels containing scaffolding.
-#
-#     Returns:
-#         An (x, y) pair for the scaffold column, or None if no valid position found.
-#     """
-#
-#     max_x, max_y, max_z = GRID_SIZE
-#
-#     min_z = min(voxel[2] for voxel in target_component_voxels)
-#
-#     # Gather candidate (x, y) positions: horizontal neighbors of the component footprint
-#     footprint = set((voxel[0], voxel[1]) for voxel in target_component_voxels)
-#
-#     candidates = set()
-#
-#     for (fx, fy) in footprint:
-#         for dx, dy, _ in neighbors_2d_horizontal((fx, fy, min_z)):
-#             nx_, ny_ = fx + dx, fy + dy
-#
-#             if 0 <= nx_ < max_x and 0 <= ny_ < max_y:
-#                 if (nx_, ny_) not in footprint:
-#                     candidates.add((nx_, ny_))
-#
-#     occupied = voxel_grid.target | existing_scaffolding
-#
-#     for (cx, cy) in candidates:
-#         # Check every level of the proposed column for no-tight-build constraint violations
-#         column_voxels = [(cx, cy, z) for z in range(min_z)]
-#
-#         valid = True
-#
-#         tentative = set(occupied)
-#
-#         for voxel in column_voxels:
-#             if voxel in tentative:
-#                 valid = False
-#
-#                 break
-#
-#             if no_tight_build_violated(voxel, tentative):
-#                 valid = False
-#
-#                 break
-#
-#             tentative.add(voxel)
-#
-#         if valid:
-#             return (cx, cy)
-#
-#     return None
 
 def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
     """
@@ -400,9 +335,18 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
 
             existing_scaffold.add(voxel)
 
-        # Find the ground-root node to anchor the scaffold build to.
-        # Use the ground-root with the lowest workload (fewest voxels) as anchor.
-        anchor_node = min(ground_roots, key = lambda n: len(dependency_graph.nodes[n]["voxels"]))
+        # The scaffold column starts at z=0 and is self-grounding.
+        # Only anchor to an existing ground root if the column's base voxel spatially conflicts with one - otherwise
+        # make it a free root.
+        base_voxel = (cx, cy, 0)
+
+        anchor_node = None
+
+        for node in ground_roots:
+            if base_voxel in dependency_graph.nodes[node]["voxels"]:
+                anchor_node = node
+
+                break
 
         # Add ScaffoldBuild node
         scaffold_build_id = next_node_id
@@ -430,15 +374,23 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
             scaffold_order=tear_order
         )
 
-        # Wire edges:
-        # ground anchor -> scaffold build (scaffold can start from ground)
-        dependency_graph.add_edge(anchor_node, scaffold_build_id)
+        # Remove existing predecessor edges into the target node before adding scaffold dependency, so the scaffold
+        # replaces them.
+        existing_predecessors = list(dependency_graph.predecessors(target_node))
+
+        for pred in existing_predecessors:
+            dependency_graph.remove_edge(pred, target_node)
 
         # scaffold build -> target (target waits for scaffold)
         dependency_graph.add_edge(scaffold_build_id, target_node)
 
         # target -> scaffold tear (teardown waits for target completion)
         dependency_graph.add_edge(target_node, scaffold_tear_id)
+
+        # Only anchor to a ground root if the base voxel is owned by one.
+        # Otherwise the scaffold build node is a free root (self-grounding at z=0).
+        if anchor_node is not None:
+            dependency_graph.add_edge(anchor_node, scaffold_build_id)
 
         print(f"Scaffold added for component {target_node}: "
               f"column at ({cx}, {cy}), z=0 to z={min_z - 1}. "

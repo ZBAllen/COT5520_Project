@@ -153,7 +153,9 @@ class Simulator:
 
             return
 
-        best_component = max(reachable_components, key=lambda comp: compute_component_workload(self.component_dependency_graph, comp, self.component_sizes, self.num_robots_assigned_to_components))
+        # best_component = max(reachable_components, key=lambda comp: compute_component_workload(self.component_dependency_graph, comp, self.component_sizes, self.num_robots_assigned_to_components))
+
+        best_component = random.choice(reachable_components)
 
         robot.component = best_component
         print(f"{robot.id} says: I've been assigned to component {robot.component}")
