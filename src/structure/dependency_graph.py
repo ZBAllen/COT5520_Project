@@ -1,6 +1,7 @@
 import networkx as nx
 from collections import defaultdict
 
+from src.config import GRID_SIZE
 from src.structure.voxel_grid import VoxelGrid
 
 def neighbors_2d_horizontal(voxel: tuple[int, int, int]) -> list[tuple[int, int, int]]:
@@ -166,5 +167,281 @@ def contract_graph(dependency_graph: nx.DiGraph) -> nx.DiGraph:
                     graph_changed = True
 
                     break
+
+    return dependency_graph
+
+def no_tight_build_violated(voxel: tuple[int, int, int],
+                            occupied: set[tuple[int, int, int]]) -> bool:
+    """
+    Returns true if placing this voxel would violate the no-tight-build constraint given the set of already-occupied
+    positions.
+    """
+
+    x, y, z = voxel
+
+    axis_pairs = [
+        ((x + 1, y, z), (x - 1, y, z)),
+        ((x, y + 1, z), (x, y - 1, z)),
+        ((x, y, z + 1), (x, y, z - 1)),
+    ]
+
+    for a, b in axis_pairs:
+        if a in occupied and b in occupied:
+            return True
+
+    return False
+
+def find_scaffolding_column_position(target_component_voxels: set[tuple[int, int, int]],
+                                     voxel_grid: VoxelGrid,
+                                     existing_scaffolding: set[tuple[int, int, int]]) -> tuple[int, int] | None:
+    max_x, max_y, max_z = __import__('src.config', fromlist=['GRID_SIZE']).GRID_SIZE
+
+    min_z = min(v[2] for v in target_component_voxels)
+    footprint = set((v[0], v[1]) for v in target_component_voxels)
+
+    # Also exclude (x,y) positions already used by existing scaffold columns
+    existing_scaffold_footprint = set((v[0], v[1]) for v in existing_scaffolding)
+
+    occupied = voxel_grid.target | existing_scaffolding
+    max_radius = max(max_x, max_y)
+
+    for radius in range(1, max_radius + 1):
+        candidates = []
+
+        # Generate the outer ring at this radius, sorted by proximity to
+        # the centroid of the target footprint so we pick the closest valid column
+        cx_mean = sum(fx for fx, fy in footprint) / len(footprint)
+        cy_mean = sum(fy for fx, fy in footprint) / len(footprint)
+
+        ring = set()
+        for (fx, fy) in footprint:
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if abs(dx) != radius and abs(dy) != radius:
+                        continue
+                    nx_, ny_ = fx + dx, fy + dy
+                    if not (0 <= nx_ < max_x and 0 <= ny_ < max_y):
+                        continue
+                    if (nx_, ny_) in footprint:
+                        continue
+                    # Exclude positions already occupied by other scaffold columns
+                    if (nx_, ny_) in existing_scaffold_footprint:
+                        continue
+                    ring.add((nx_, ny_))
+
+        # Sort ring candidates by distance to footprint centroid for determinism
+        candidates = sorted(ring, key=lambda p: abs(p[0] - cx_mean) + abs(p[1] - cy_mean))
+
+        for (cx, cy) in candidates:
+            column_voxels = [(cx, cy, z) for z in range(min_z)]
+            valid = True
+            tentative = set(occupied)
+            for voxel in column_voxels:
+                if voxel in tentative:
+                    valid = False
+                    break
+                if no_tight_build_violated(voxel, tentative):
+                    valid = False
+                    break
+                tentative.add(voxel)
+            if valid:
+                return (cx, cy)
+
+    return None
+
+# def find_scaffolding_column_position(target_component_voxels: set[tuple[int, int, int]],
+#                                      voxel_grid: VoxelGrid,
+#                                      existing_scaffolding: set[tuple[int, int, int]]) -> tuple[int, int] | None:
+#     """
+#     Find an (x, y) position for a scaffold column adjacent to the target component that does not conflict with target
+#     voxels and will not violate the no-tight-build constraint at any z level from 0 up to the component's minimum z - 1.
+#
+#     Args:
+#         target_component_voxels: The set of voxels in the component to be built.
+#         voxel_grid: The voxel grid being built in.
+#         existing_scaffolding: The set of voxels containing scaffolding.
+#
+#     Returns:
+#         An (x, y) pair for the scaffold column, or None if no valid position found.
+#     """
+#
+#     max_x, max_y, max_z = GRID_SIZE
+#
+#     min_z = min(voxel[2] for voxel in target_component_voxels)
+#
+#     # Gather candidate (x, y) positions: horizontal neighbors of the component footprint
+#     footprint = set((voxel[0], voxel[1]) for voxel in target_component_voxels)
+#
+#     candidates = set()
+#
+#     for (fx, fy) in footprint:
+#         for dx, dy, _ in neighbors_2d_horizontal((fx, fy, min_z)):
+#             nx_, ny_ = fx + dx, fy + dy
+#
+#             if 0 <= nx_ < max_x and 0 <= ny_ < max_y:
+#                 if (nx_, ny_) not in footprint:
+#                     candidates.add((nx_, ny_))
+#
+#     occupied = voxel_grid.target | existing_scaffolding
+#
+#     for (cx, cy) in candidates:
+#         # Check every level of the proposed column for no-tight-build constraint violations
+#         column_voxels = [(cx, cy, z) for z in range(min_z)]
+#
+#         valid = True
+#
+#         tentative = set(occupied)
+#
+#         for voxel in column_voxels:
+#             if voxel in tentative:
+#                 valid = False
+#
+#                 break
+#
+#             if no_tight_build_violated(voxel, tentative):
+#                 valid = False
+#
+#                 break
+#
+#             tentative.add(voxel)
+#
+#         if valid:
+#             return (cx, cy)
+#
+#     return None
+
+def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
+    """
+    Augment the dependency graph with scaffold build and teardown nodes for components that have no ground-reachable
+    path without temporary support.
+
+    For each target component whose lowest voxel is above z = 0 and which has no ground-anchored predecessor path, a
+    vertical scaffold column is generated.
+        - ScaffoldBuild:    ground-anchored, must complete before the target component.
+        - ScaffoldTear:     must complete after the target component (reverse build order).
+
+    The scaffold voxels are registered in voxel_grid.scaffold so that can_build and the simulator treat them as valid,
+    temporary build locations.
+
+    Args:
+         dependency_graph: The contracted dependency graph.
+         voxel_grid: The voxel grid being built in.
+
+        Returns:
+            The augmented dependency graph.
+    """
+
+    # Identify ground-rooted components
+    ground_roots = set()
+
+    for node in dependency_graph.nodes:
+        voxels = dependency_graph.nodes[node]["voxels"]
+
+        if any(voxel[2] == 0 for voxel in voxels):
+            ground_roots.add(node)
+
+    if not ground_roots:
+        print("Warning: No ground-rooted components found. Cannot add scaffolding.")
+
+        return dependency_graph
+
+    # BFS to find all nodes reachable from any ground root
+    reachable = set()
+
+    queue = list(ground_roots)
+
+    while queue:
+        current = queue.pop()
+
+        if current in reachable:
+            continue
+
+        reachable.add(current)
+
+        for successor in dependency_graph.successors(current):
+            if successor not in reachable:
+                queue.append(successor)
+
+    # Nodes not reachable from the ground are scaffolding candidates
+    scaffold_candidates = [node for node in dependency_graph.nodes if node not in reachable]
+
+    # Sort by minimum z so lower floating components get scaffolding first
+    scaffold_candidates.sort(key = lambda n: min(voxel[2] for voxel in dependency_graph.nodes[n]["voxels"]))
+
+    existing_scaffold: set[tuple[int, int, int]] = set()
+
+    next_node_id = max(dependency_graph.nodes) + 1
+
+    for target_node in scaffold_candidates:
+        target_voxels = dependency_graph.nodes[target_node]["voxels"]
+
+        min_z = min(voxel[2] for voxel in target_voxels)
+
+        if min_z == 0:
+            # Already ground-level, no scaffold needed
+            continue
+
+        column_xy = find_scaffolding_column_position(target_voxels, voxel_grid, existing_scaffold)
+
+        if column_xy is None:
+            print(f"Warning: Could not find valid scaffold column position for component {target_node}.")
+
+            continue
+
+        cx, cy = column_xy
+
+        # Build column from z = 0 up to min_z - 1 (inclusive)
+        build_order = [(cx, cy, z) for z in range(min_z)]
+        tear_order = list(reversed(build_order))
+
+        # Register scaffold voxels
+        for voxel in build_order:
+            voxel_grid.scaffold.add(voxel)
+
+            existing_scaffold.add(voxel)
+
+        # Find the ground-root node to anchor the scaffold build to.
+        # Use the ground-root with the lowest workload (fewest voxels) as anchor.
+        anchor_node = min(ground_roots, key = lambda n: len(dependency_graph.nodes[n]["voxels"]))
+
+        # Add ScaffoldBuild node
+        scaffold_build_id = next_node_id
+
+        next_node_id += 1
+
+        dependency_graph.add_node(
+            scaffold_build_id,
+            voxels=set(build_order),
+            is_scaffold=True,
+            scaffold_for=target_node,
+            scaffold_order=build_order
+        )
+
+        # Add ScaffoldTear node
+        scaffold_tear_id = next_node_id
+
+        next_node_id += 1
+
+        dependency_graph.add_node(
+            scaffold_tear_id,
+            voxels=set(tear_order),
+            is_scaffold_teardown=True,
+            scaffold_for=target_node,
+            scaffold_order=tear_order
+        )
+
+        # Wire edges:
+        # ground anchor -> scaffold build (scaffold can start from ground)
+        dependency_graph.add_edge(anchor_node, scaffold_build_id)
+
+        # scaffold build -> target (target waits for scaffold)
+        dependency_graph.add_edge(scaffold_build_id, target_node)
+
+        # target -> scaffold tear (teardown waits for target completion)
+        dependency_graph.add_edge(target_node, scaffold_tear_id)
+
+        print(f"Scaffold added for component {target_node}: "
+              f"column at ({cx}, {cy}), z=0 to z={min_z - 1}. "
+              f"BuildNode={scaffold_build_id}, TearNode={scaffold_tear_id}.")
 
     return dependency_graph

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 from src.config import *
 from src.structure.voxel_grid import VoxelGrid
-from src.structure.dependency_graph import build_graph, contract_graph
+from src.structure.dependency_graph import build_graph, contract_graph, add_scaffolding
 from src.planning.component_ordering import order_component_voxels
 from src.planning.workload import compute_component_workload
 from src.pathfinding.a_star import a_star
@@ -17,7 +17,8 @@ class Simulator:
         self.voxel_grid = VoxelGrid()
 
         # Add target structures to the voxel grid
-        structures = ["random"]
+        # structures = ["random"]
+        structures = ["overhangs"]
 
         for structure in structures:
             self.voxel_grid.add_structure(structure)
@@ -27,7 +28,11 @@ class Simulator:
 
         self.component_dependency_graph = contract_graph(voxel_dependency_graph)
 
-        self.voxels_available = len(self.voxel_grid.target)
+        # Add scaffolding for unreachable components if selected
+        if SCAFFOLDING:
+            self.component_dependency_graph = add_scaffolding(self.component_dependency_graph, self.voxel_grid)
+
+        self.voxels_available = len(self.voxel_grid.target) + len(self.voxel_grid.scaffold)
         self.voxels_in_transit = 0
 
         self.component_orderings = {}
@@ -35,11 +40,19 @@ class Simulator:
 
         for component in self.component_dependency_graph:
 
-            component_voxels = self.component_dependency_graph.nodes[component]['voxels']
+            node_data = self.component_dependency_graph.nodes[component]
+            component_voxels = node_data['voxels']
 
             print(f"\nOrdering component {component} with {len(component_voxels)} voxels...")
 
-            component_voxel_build_order = order_component_voxels(component_voxels, self.component_dependency_graph, component)
+            # Scaffold nodes have a pre-determined order; skip the BFS ordering for them
+            if node_data.get("is_scaffold") or node_data.get("is_scaffold_teardown"):
+                component_voxel_build_order = node_data["scaffold_order"]
+
+            else:
+                component_voxel_build_order = order_component_voxels(
+                    component_voxels, self.component_dependency_graph, component
+                )
 
             self.component_orderings[component] = component_voxel_build_order
             self.component_sizes[component] = len(component_voxels)
@@ -85,6 +98,8 @@ class Simulator:
         return valid_positions
 
     def available_components(self):
+        """Returns the set of components that are not completed yet and are reachable."""
+
         components = []
 
         for component in self.component_dependency_graph.nodes:
@@ -94,9 +109,17 @@ class Simulator:
             if all(comp in self.completed_components for comp in self.component_dependency_graph.predecessors(component)):
                 components.append(component)
 
+        random.shuffle(components)
+
         return components
 
     def assign(self, robot: Robot):
+        """
+        Assigns the given robot to an available voxel.
+
+        If no voxels exist that aren't built and are reachable, then returns without assignment.
+        """
+
         # Get the components that are currently buildable
         available_comps = self.available_components()
 
@@ -150,11 +173,24 @@ class Simulator:
         self.voxels_available += 1
         self.voxels_in_transit -= 1
 
+    def is_teardown_component(self, component: int) -> bool:
+        """Returns true if the given component is a scaffold teardown node."""
+
+        return self.component_dependency_graph.nodes[component].get("is_scaffold_teardown", False)
+
     def update(self):
-        bots=self.robots.copy()
+        """Updates the state of the simulation by one step."""
+
+        bots = self.robots.copy()
         random.shuffle(bots)
 
         for robot in bots:   # TODO: Would it help if a random order of robots was used every time? It would prevent the same robots from being used first and may prevent issues with blocked paths.
+            # Teardown robots do not carry voxels - handle them on a separate path
+            if robot.component is not None and self.is_teardown_component(robot.component):
+                self.update_teardown_robot(robot)
+
+                continue
+
             # If robot doesn't have a voxel, send to voxel depot
             if not robot.has_voxel:
                 if self.voxels_available > 0:
@@ -186,12 +222,20 @@ class Simulator:
             if robot.component is None:
                 self.assign(robot)
 
-                # TODO: Robots shouldn't drop the voxel before reaching the storage depot (to simulate them having to put voxels back in storage).
-                # If still no assignment after trying, drop voxel and return to depot
-                if robot.component is None:
-                    self.drop_voxel(robot)
+            # TODO: Robots shouldn't drop the voxel before reaching the storage depot (to simulate them having to put voxels back in storage).
+            # If still no assignment after trying, drop voxel and return to depot
+            if robot.component is None:
+                self.drop_voxel(robot)
 
-                continue    # Move on to next robot
+                continue  # Move on to next robot
+
+            # If assigned to a teardown component, drop voxel first and switch to teardown path
+            if self.is_teardown_component(robot.component):
+                self.drop_voxel(robot)
+
+                self.update_teardown_robot(robot)
+
+                continue
 
             # Robot has voxel, component assigned, assign a voxel in the component for the robot to build
             ordered_voxels_in_component = self.component_orderings[robot.component]
@@ -256,6 +300,69 @@ class Simulator:
 
                     self.num_robots_assigned_to_components[robot.component] -= 1
                     robot.component = None  # Remove robot's assigned component, so it can work on other things if needed
+
+    def update_teardown_robot(self, robot: Robot):
+        """
+        Handle a robot assigned to a scaffold teardown component.
+        The robot moves to each scaffold voxel in reverse (top-down) order and removes it.
+        The robot does not carry a voxel during teardown.
+        """
+
+        # Ensure the robot is not carrying a voxel during teardown
+        if robot.has_voxel:
+            self.drop_voxel(robot)
+
+        ordered_voxels = self.component_orderings[robot.component]
+
+        # Skip voxels already removed (not in built)
+        while (robot.voxel_index < len(ordered_voxels)) and ordered_voxels[robot.voxel_index] not in self.voxel_grid.built:
+            robot.voxel_index += 1
+
+        # If all scaffold voxels have been removed, mark component complete
+        if robot.voxel_index >= len(ordered_voxels):
+            self.num_robots_assigned_to_components[robot.component] -= 1
+
+            robot.component = None
+
+            return
+
+        target_voxel = ordered_voxels[robot.voxel_index]
+
+        valid_locations = self.valid_construction_locations(target_voxel)
+
+        if not valid_locations:
+            print(f"Teardown: no valid locations near {target_voxel}")
+
+            return
+
+        if robot.position not in valid_locations:
+            if robot.path and robot.path[0] not in self.voxel_grid.built:
+                robot.step()
+
+            else:
+                destination = valid_locations[random.randint(0, len(valid_locations) - 1)]
+
+                robot.path = a_star(robot.position, destination, self.voxel_grid.built)
+
+        else:
+            # Remove the scaffold voxel
+            self.voxel_grid.built.discard(target_voxel)
+            self.voxel_grid.scaffold.discard(target_voxel)
+
+            robot.has_voxel = True
+            self.voxels_in_transit += 1
+
+            if robot.voxel_index == 0:
+                print(f"{robot.id} says: I removed scaffold voxel {target_voxel}")
+
+            robot.voxel_index = 0
+
+            # Check component completion after removal
+            if all(v not in self.voxel_grid.built for v in ordered_voxels):
+                self.completed_components.add(robot.component)
+
+            self.num_robots_assigned_to_components[robot.component] -= 1
+            robot.component = None
 
     def run(self):
         plt.ion()

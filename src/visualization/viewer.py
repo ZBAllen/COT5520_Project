@@ -13,7 +13,7 @@ class Viewer:
         self.azim = 45
         self.fig = plt.figure()
         self.fig.canvas.mpl_connect('key_press_event', self.on_key)
-        self.auto_zoom = True
+        self.auto_zoom = False
 
     def on_key(self, event):
         if event.key == 'left':
@@ -61,15 +61,25 @@ class Viewer:
             GRID_SIZE[2]
         ])
 
-        # Draw remaining structure (light gray, translucent)
-        remaining = voxel_grid.target - voxel_grid.built
+        # Draw target voxels
+        for voxel in voxel_grid.target:
+            if voxel in voxel_grid.built:
+                # Draw built target voxels (solid blue)
+                self.draw_cube(ax, voxel, color='blue', alpha=1.0)
 
-        for voxel in remaining:
-            self.draw_cube(ax, voxel, color='gray', alpha=0.2)
+            else:
+                # Draw remaining target structure (light gray, translucent)
+                self.draw_cube(ax, voxel, color='gray', alpha=0.2)
 
-        # Draw built structure (solid blue)
-        for voxel in voxel_grid.built:
-            self.draw_cube(ax, voxel, color='blue', alpha=1.0)
+        # Draw scaffolding
+        for voxel in voxel_grid.scaffold:
+            if voxel in voxel_grid.built:
+                # Draw built scaffold voxels (orange, semi-transparent to distinguish from target)
+                self.draw_cube(ax, voxel, color='orange', alpha=0.8)
+
+            else:
+                # Draw unbuilt scaffold voxels (light orange ghost, for debugging)
+                self.draw_cube(ax, voxel, color='orange', alpha=0.15)
 
         # Draw robots (red spheres)
         rx = [r.position[0] + 0.5 for r in robots]

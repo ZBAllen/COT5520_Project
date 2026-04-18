@@ -7,6 +7,7 @@ class VoxelGrid:
     def __init__(self):
         self.built = set()
         self.target = set()
+        self.scaffold = set()
 
     def add_structure(self, structure_type: str):
         if structure_type == "cube":
@@ -17,6 +18,12 @@ class VoxelGrid:
 
         elif structure_type == "wall":
             self.add_wall((5, 5, 0), 6, 4)
+
+        elif structure_type == "overhang":
+            self.add_overhang((5, 5, 0), 10, 20)
+
+        elif structure_type == "overhangs":
+            self.add_overhangs((5, 5, 0), 3, 20)
 
         elif structure_type == "random":
             self.add_random_connected(RANDOM_VOXELS)
@@ -48,6 +55,38 @@ class VoxelGrid:
         for x in range(width):
             for z in range(height):
                 self.target.add((ox + x, oy, oz + z))
+
+    def add_overhang(self, origin: tuple[int, int, int], height: int = 3, arm_length: int = 3):
+        ox, oy, oz = origin
+
+        # Vertical column
+        for z in range(height):
+            self.target.add((ox, oy, oz + z))
+
+        # Horizontal arm extending in the x-direction from the top of the column
+        for dx in range(1, arm_length + 1):
+            self.target.add((ox + dx, oy, oz + height - 1))
+
+    def add_overhangs(self, origin: tuple[int, int, int], num_overhangs: int = 3, arm_length: int = 3):
+        ox, oy, oz = origin
+
+        # Ground anchor column so the dependency graph has at least one ground root
+        first_base_z = oz + 2
+
+        for z in range(first_base_z):
+            self.target.add((ox, oy, oz + z))
+
+        for i in range(num_overhangs):
+            # Each stub starts 2 voxels higher than the previous, with a gap below it
+            base_z = oz + 2 + (i * 3)
+
+            # Short 2-voxel tall stub (not connected to ground)
+            self.target.add((ox + (i * 2), oy, base_z))
+            self.target.add((ox + (i * 2), oy, base_z + 1))
+
+            # Horizontal arm extending in x from the top of stub
+            for dx in range(1, arm_length + 1):
+                self.target.add((ox + (i * 2) + dx, oy, base_z + 1))
 
     # ------------------------
     # RANDOM CONNECTED STRUCTURE
@@ -122,8 +161,8 @@ class VoxelGrid:
 
         x, y, z = voxel
 
-        # Must be part of structure
-        if voxel not in self.target:
+        # Must be part of structure or scaffold
+        if voxel not in self.target and voxel not in self.scaffold:
             print("not part of struct")
             return False
 
