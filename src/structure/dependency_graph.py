@@ -3,13 +3,7 @@ from collections import defaultdict
 
 from src.config import GRID_SIZE
 from src.structure.voxel_grid import VoxelGrid
-
-def neighbors_2d_horizontal(voxel: tuple[int, int, int]) -> list[tuple[int, int, int]]:
-    x, y, z = voxel
-
-    directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-
-    return [(x + dx, y + dy, z) for dx, dy in directions]
+from src.utils import neighbors_2d_horizontal
 
 def connected_components(voxels: set[tuple[int, int, int]]) -> list[set[tuple[int, int, int]]]:
     """

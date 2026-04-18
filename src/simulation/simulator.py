@@ -10,6 +10,7 @@ from src.planning.component_ordering import order_component_voxels
 from src.planning.workload import compute_component_workload
 from src.pathfinding.a_star import a_star
 from src.robots.robot import Robot
+from src.utils import valid_construction_locations
 from src.visualization.viewer import Viewer
 
 class Simulator:
@@ -70,32 +71,6 @@ class Simulator:
 
         self.robots = [Robot(i, (0, i % GRID_SIZE[1], 0)) for i in range(NUM_ROBOTS)]
         self.viewer = Viewer()
-
-    def valid_construction_locations(self, voxel: tuple[int, int, int]) -> list[tuple[int, int, int]]:
-        """
-        Returns the locations near the target voxel that are valid for constructing the voxel.
-
-        Args:
-            voxel: Voxel to identify valid construction locations.
-
-        Returns:
-            The locations in the 3x3x3 grid around the target voxel that a robot can build the target voxel from.
-        """
-
-        x, y, z = voxel
-
-        directions = [
-            (-1, 0, 0), (1, 0, 0), (0, -1, 0), (-1, -1, 0), (1, -1, 0), (0, 1, 0), (-1, 1, 0), (1, 1, 0),
-            (0, 0, -1), (-1, 0, -1), (1, 0, -1), (0, -1, -1), (-1, -1, -1), (1, -1, -1), (0, 1, -1),
-            (-1, 1, -1), (1, 1, -1), (0, 0, 1), (-1, 0, 1), (1, 0, 1), (0, -1, 1), (-1, -1, 1), (1, -1, 1),
-            (0, 1, 1), (-1, 1, 1), (1, 1, 1)
-        ]
-
-        positions = [(x + dx, y + dy, z + dz) for dx, dy, dz in directions]
-
-        valid_positions = [position for position in positions if position not in self.voxel_grid.built]
-
-        return valid_positions
 
     def available_components(self):
         """Returns the set of components that are not completed yet and are reachable."""
@@ -264,7 +239,7 @@ class Simulator:
             #     print(f"Robot {robot.id} | pos={robot.position} | target_voxel={target_voxel} | can_build={self.voxel_grid.can_build(target_voxel, robot.voxel_index, self.robots, ordered_voxels_in_component)} | path={robot.path}")
             #     print(self.voxel_grid.built)
 
-            valid_build_locations = self.valid_construction_locations(target_voxel)
+            valid_build_locations = valid_construction_locations(target_voxel, self.voxel_grid.built)
 
             # If the block can't be built due to obstructions, print a statement
             if not valid_build_locations:
@@ -330,7 +305,7 @@ class Simulator:
 
         target_voxel = ordered_voxels[robot.voxel_index]
 
-        valid_locations = self.valid_construction_locations(target_voxel)
+        valid_locations = valid_construction_locations(target_voxel, self.voxel_grid.built)
 
         if not valid_locations:
             print(f"Teardown: no valid locations near {target_voxel}")
