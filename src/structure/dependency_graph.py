@@ -375,13 +375,6 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
             scaffold_order=tear_order
         )
 
-        # Remove existing predecessor edges into the target node before adding scaffold dependency, so the scaffold
-        # replaces them.
-        existing_predecessors = list(dependency_graph.predecessors(target_node))
-
-        for pred in existing_predecessors:
-            dependency_graph.remove_edge(pred, target_node)
-
         # scaffold build -> target (target waits for scaffold)
         dependency_graph.add_edge(scaffold_build_id, target_node)
 

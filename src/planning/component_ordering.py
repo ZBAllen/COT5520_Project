@@ -11,16 +11,29 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
     """
 
     predecessor_voxels = set()
+    normal_predecessor_voxels = set()
+    scaffold_predecessor_voxels = set()
 
     for predecessor_component_id in dependency_graph.predecessors(current_component_id):
-        predecessor_voxels.update(dependency_graph.nodes[predecessor_component_id]['voxels'])
+        pred_voxels = dependency_graph.nodes[predecessor_component_id]['voxels']
 
-    # Find starting voxels adjacent to predecessors
+        predecessor_voxels.update(pred_voxels)
+
+        if dependency_graph.nodes[predecessor_component_id].get("is_scaffold"):
+            scaffold_predecessor_voxels.update(pred_voxels)
+
+        else:
+            normal_predecessor_voxels.update(pred_voxels)
+
+    # Prefer structural predecessors over scaffold predecessors
+    preferred_predecessors = normal_predecessor_voxels if normal_predecessor_voxels else predecessor_voxels
+
     starting_voxels = []
+
     for voxel in voxels_in_component:
         neighbors = neighbors_3d(voxel)
 
-        if any(neighbor in predecessor_voxels for neighbor in neighbors):
+        if any(neighbor in preferred_predecessors for neighbor in neighbors):
             starting_voxels.append(voxel)
 
     if not starting_voxels:
