@@ -8,8 +8,4 @@ class Robot:
         self.has_voxel = False
 
     def step(self):
-        if self.path:
-            self.position = self.path.pop(0)
-
-        if not self.path:
-            self.path = []
+        self.position = self.path.pop(0)

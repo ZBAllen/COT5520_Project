@@ -50,7 +50,7 @@ class Viewer:
         cube.set_facecolor(color)
         ax.add_collection3d(cube)
 
-    def draw(self, voxel_grid: VoxelGrid, robots: list[Robot], voxels_available: int = 0, voxels_in_transit: int = 0):
+    def draw(self, voxel_grid: VoxelGrid, robots: list[Robot], voxels_available: int = 0, voxels_in_transit: int = 0, total_steps: int = 0):
         self.fig.clear()
 
         ax = self.fig.add_subplot(111, projection='3d')
@@ -94,6 +94,9 @@ class Viewer:
         # Display voxel counts
         ax.text2D(0.05, 0.95, f'Available: {voxels_available} | In Transit: {voxels_in_transit}',
                   transform=ax.transAxes)
+
+        # Display total robot steps
+        ax.text2D(0.25, 0.85, f"Total Steps: {total_steps}", transform=ax.transAxes)
 
         # Set camera
         ax.view_init(elev=self.elev, azim=self.azim)
