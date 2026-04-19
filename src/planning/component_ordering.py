@@ -38,14 +38,12 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
     for voxel in bfs_order:
         ordering_graph.add_node(voxel)
 
+    bfs_position = {voxel: i for i, voxel in enumerate(bfs_order)}
+
     for i, voxel in enumerate(bfs_order):
-        neighbors = neighbors_3d(voxel)
-
-        for neighbor in neighbors:
+        for neighbor in neighbors_3d(voxel):
             if neighbor in voxels_in_component:
-                neighbor_idx = bfs_order.index(neighbor)
-
-                if neighbor_idx > i:
+                if bfs_position[neighbor] > i:
                     ordering_graph.add_edge(voxel, neighbor)
 
     # Step 2: Fix no-tight-building constraint violations [1]
@@ -59,21 +57,7 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
         # Find all voxels that violate the constraint
         violations = []
 
-        for voxel in voxels_in_component:
-            neighbors = neighbors_3d(voxel)
-
-            # Check each axis for violations [1]
-            axis_pairs = [(0, 1), (2, 3), (4, 5)]
-
-            for idx1, idx2 in axis_pairs:
-                n1, n2 = neighbors[idx1], neighbors[idx2]
-
-                if n1 in voxels_in_component and n2 in voxels_in_component:
-                    # Violation: voxel has incoming edges from both axis neighbors
-                    if ordering_graph.has_edge(n1, voxel) and ordering_graph.has_edge(n2, voxel):
-                        violations.append(voxel)
-
-                        break
+        find_violations(voxels_in_component, ordering_graph)
 
         if not violations:
             break
@@ -120,3 +104,23 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
         final_ordering = list(nx.topological_sort(dag))
 
     return final_ordering
+
+def find_violations(voxels_in_component: set[tuple[int, int, int]], ordering_graph: nx.DiGraph):
+    violations = []
+
+    neighbors_map = {voxel: neighbors_3d(voxel) for voxel in voxels_in_component}
+
+    axis_pairs = [(0, 1), (2, 3), (4, 5)]
+
+    for voxel in voxels_in_component:
+        neighbors = neighbors_map[voxel]
+
+        for idx1, idx2 in axis_pairs:
+            n1, n2 = neighbors[idx1], neighbors[idx2]
+
+            if n1 in voxels_in_component and n2 in voxels_in_component and ordering_graph.has_edge(n1, voxel) and ordering_graph.has_edge(n2, voxel):
+                violations.append(voxel)
+
+                break
+
+    return violations

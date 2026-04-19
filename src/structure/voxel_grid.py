@@ -88,6 +88,9 @@ class VoxelGrid:
             for dx in range(1, arm_length + 1):
                 self.target.add((ox + (i * 2) + dx, oy, base_z + 1))
 
+        self.target.add((ox + 15, oy, 7))
+        self.target.add((ox + 15, oy, 8))
+
     # ------------------------
     # RANDOM CONNECTED STRUCTURE
     # ------------------------

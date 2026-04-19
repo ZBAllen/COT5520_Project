@@ -185,7 +185,9 @@ def no_tight_build_violated(voxel: tuple[int, int, int],
 
     return False
 
-def find_scaffolding_column_position(target_component_voxels, voxel_grid, existing_scaffolding):
+def find_scaffolding_column_position(target_component_voxels,
+                                     voxel_grid: VoxelGrid,
+                                     existing_scaffolding: set[tuple[int, int, int]]) -> tuple[int, int] | None:
     max_x, max_y, max_z = GRID_SIZE
 
     min_z = min(v[2] for v in target_component_voxels)
@@ -319,8 +321,8 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
 
         cx, cy = column_xy
 
-        # Build column from z = 0 up to min_z - 1 (inclusive)
-        build_order = [(cx, cy, z) for z in range(min_z)]
+        # Build column from z = 0 up to min_z
+        build_order = [(cx, cy, z) for z in range(min_z + 2)]
         tear_order = list(reversed(build_order))
 
         # Register scaffold voxels
@@ -333,6 +335,11 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
         # Only anchor to an existing ground root if the column's base voxel spatially conflicts with one - otherwise
         # make it a free root.
         base_voxel = (cx, cy, 0)
+
+        # After finding column_xy, verify no tight-build conflict with z=0 target voxels
+        if no_tight_build_violated(base_voxel, voxel_grid.target):
+            # Try another column position
+            continue
 
         anchor_node = None
 

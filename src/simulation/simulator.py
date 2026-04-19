@@ -19,7 +19,7 @@ class Simulator:
         self.component_dependency_graph = None
         self.generate_structures_and_graph()
 
-        self.voxels_available = len(self.voxel_grid.target) + len(self.voxel_grid.scaffold)
+        self.voxels_available = len(self.voxel_grid.target) #+ len(self.voxel_grid.scaffold)
         self.voxels_in_transit = 0
 
         self.component_orderings = {}
@@ -355,13 +355,19 @@ class Simulator:
             if not self.component_orderings[component]:
                 continue
 
-            first_voxel = self.component_orderings[component][0]
+            if self.is_teardown_component(component):
+                reachable = any(a_star(robot.position, voxel, self.voxel_grid.built) for voxel in self.component_orderings[component] if voxel in self.voxel_grid.built)
 
-            if a_star(robot.position, first_voxel, self.voxel_grid.built):
+            else:
+                first_voxel = self.component_orderings[component][0]
+
+                reachable = bool(a_star(robot.position, first_voxel, self.voxel_grid.built))
+
+            if reachable:
                 reachable_components.append(component)
 
-            # else:
-            #     print(f"Robot {robot.id}: Cannot reach component {component}, first voxel {first_voxel}")
+            else:
+                print(f"Robot {robot.id}: Cannot reach component {component}")
 
         if not reachable_components:
             # print(f"Robot {robot.id}: No reachable nodes from {len(available_comps)} available")
@@ -370,9 +376,9 @@ class Simulator:
 
             return
 
-        # best_component = max(reachable_components, key=lambda comp: compute_component_workload(self.component_dependency_graph, comp, self.component_sizes, self.num_robots_assigned_to_components))
+        best_component = max(reachable_components, key=lambda comp: compute_component_workload(self.component_dependency_graph, comp, self.component_sizes, self.num_robots_assigned_to_components))
 
-        best_component = random.choice(reachable_components)
+        # best_component = random.choice(reachable_components)
 
         robot.component = best_component
         print(f"{robot.id} says: I've been assigned to component {robot.component}")
