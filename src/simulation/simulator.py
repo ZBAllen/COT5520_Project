@@ -240,7 +240,9 @@ class Simulator:
         try:
             while len(self.completed_components) < len(self.component_dependency_graph.nodes) or not all(robot.position == DEPOT_POS for robot in self.robots):
                 self.update()
+
                 self.viewer.draw(self.voxel_grid, self.robots, self.voxels_available, self.voxels_in_transit, self.total_steps)
+
                 time.sleep(STEP_DELAY)
 
         except (KeyboardInterrupt, Exception):

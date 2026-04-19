@@ -1,5 +1,7 @@
 """This file contains utility functions used by the program."""
 
+from collections import deque
+
 def valid_construction_locations(voxel: tuple[int, int, int], built_voxels: set[tuple[int, int, int]]) -> list[tuple[int, int, int]]:
     """
     Returns the locations near the target voxel that are valid for constructing the voxel.
@@ -28,7 +30,7 @@ def valid_construction_locations(voxel: tuple[int, int, int], built_voxels: set[
     return valid_positions
 
 def neighbors_2d_horizontal(voxel: tuple[int, int, int]) -> list[tuple[int, int, int]]:
-    """Returns the neighbors of a given voxel in the xy-plane."""
+    """Returns the immediate neighbors of a given voxel in the xy-plane."""
 
     x, y, z = voxel
 
@@ -37,7 +39,7 @@ def neighbors_2d_horizontal(voxel: tuple[int, int, int]) -> list[tuple[int, int,
     return [(x + dx, y + dy, z) for dx, dy in directions]
 
 def neighbors_3d(vertex: tuple[int, int, int]) -> list[tuple[int, int, int]]:
-    """Returns the immediate neighbors of the given vertex in xyz-volume."""
+    """Returns the immediate neighbors of the given vertex in the xyz-volume."""
 
     x, y, z = vertex
 
@@ -89,3 +91,38 @@ def corner_neighbors(vertex: tuple[int, int, int],
                     accessible_corners.append(corner)
 
     return accessible_corners
+
+def bfs_component_voxels_from_starting_voxels_set(starting_voxels: list[tuple[int, int, int]],
+                                                  voxels_in_component: set[tuple[int, int, int]]
+                                                  ) -> list[tuple[int, int, int]]:
+    """
+    Returns the BFS ordering of voxels in a component, given a list of starting locations.
+
+    Args:
+         starting_voxels: The list of voxels to start the BFS search from.
+         voxels_in_component: The set of voxels in the component to perform BFS.
+
+    Returns:
+        The list of voxels in the component ordered by when they are reached by BFS.
+    """
+
+    visited = set()
+    bfs_order = []
+    queue = deque(starting_voxels)
+
+    while queue:
+        voxel = queue.popleft()
+
+        if voxel in visited or voxel not in voxels_in_component:
+            continue
+
+        visited.add(voxel)
+        bfs_order.append(voxel)
+
+        neighbors = neighbors_3d(voxel)
+
+        for neighbor in neighbors:
+            if neighbor in voxels_in_component and neighbor not in visited:
+                queue.append(neighbor)
+
+    return bfs_order

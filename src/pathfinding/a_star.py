@@ -2,7 +2,6 @@ import heapq
 from src.config import GRID_SIZE, DEPOT_POS
 from src.utils import neighbors_3d, corner_neighbors
 
-
 def heuristic(current_pos: tuple[int, int, int],
               target_pos: tuple[int, int, int]) -> int:
     """Manhattan Distance"""
