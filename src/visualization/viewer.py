@@ -6,7 +6,6 @@ from src.config import GRID_SIZE, DEPOT_POS
 from src.robots.robot import Robot
 from src.structure.voxel_grid import VoxelGrid
 
-
 class Viewer:
     def __init__(self):
         self.elev = 25
@@ -81,12 +80,19 @@ class Viewer:
                 # Draw unbuilt scaffold voxels (light orange ghost, for debugging)
                 self.draw_cube(ax, voxel, color='orange', alpha=0.15)
 
-        # Draw robots (red spheres)
-        rx = [r.position[0] + 0.5 for r in robots]
-        ry = [r.position[1] + 0.5 for r in robots]
-        rz = [r.position[2] + 0.5 for r in robots]
+        # Draw robots holding voxels (red spheres)
+        rx = [r.position[0] + 0.5 for r in robots if r.has_voxel]
+        ry = [r.position[1] + 0.5 for r in robots if r.has_voxel]
+        rz = [r.position[2] + 0.5 for r in robots if r.has_voxel]
 
         ax.scatter(rx, ry, rz, c='red', s=50, marker='o')
+
+        # Draw robots not holding voxels (cyan spheres)
+        rx = [r.position[0] + 0.5 for r in robots if not r.has_voxel]
+        ry = [r.position[1] + 0.5 for r in robots if not r.has_voxel]
+        rz = [r.position[2] + 0.5 for r in robots if not r.has_voxel]
+
+        ax.scatter(rx, ry, rz, c='cyan', s=50, marker='o')
 
         # Draw depot
         self.draw_cube(ax, DEPOT_POS, color='green', alpha=0.7)

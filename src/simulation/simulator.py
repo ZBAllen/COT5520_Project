@@ -84,7 +84,7 @@ class Simulator:
 
         # Robot has voxel, assign to component if needed
         if robot.component is None:
-            self.assign(robot)
+            self.assign_component(robot)
 
         # TODO: Robots shouldn't drop the voxel before reaching the storage depot (to simulate them having to put voxels back in storage).
         # If still no assignment after trying, drop voxel and return to depot
@@ -254,7 +254,7 @@ class Simulator:
         # Leave the figure open to be able to continue to rotate the completed structure.
         try:
             while True:
-                self.viewer.draw(self.voxel_grid, self.robots)
+                self.viewer.draw(self.voxel_grid, self.robots, self.voxels_available, self.voxels_in_transit, self.total_steps)
                 plt.pause(0.01)
 
         except (KeyboardInterrupt, Exception):
@@ -315,7 +315,7 @@ class Simulator:
                 print(f"\nDEBUG: Component {component} ordering successful. {len(component_voxel_build_order)} voxels ordered.")
 
     def available_components(self):
-        """Returns the set of components that are not completed yet and are reachable."""
+        """Returns the set of components that are not completed yet and are reachable by predecessor components."""
 
         components = []
 
@@ -330,11 +330,11 @@ class Simulator:
 
         return components
 
-    def assign(self, robot: Robot):
+    def assign_component(self, robot: Robot):
         """
-        Assigns the given robot to an available voxel.
+        Assigns the given robot to an available component.
 
-        If no voxels exist that aren't built and are reachable, then returns without assignment.
+        If no voxels exist within a component that aren't built and are reachable, then returns without assignment.
         """
 
         # Get the components that are currently buildable
@@ -359,9 +359,17 @@ class Simulator:
                 reachable = any(a_star(robot.position, voxel, self.voxel_grid.built) for voxel in self.component_orderings[component] if voxel in self.voxel_grid.built)
 
             else:
-                first_voxel = self.component_orderings[component][0]
+                remaining = [v for v in self.component_orderings[component] if v not in self.voxel_grid.built]
 
-                reachable = bool(a_star(robot.position, first_voxel, self.voxel_grid.built))
+                if not remaining:
+                    reachable = False
+
+                else:
+                    next_voxel = remaining[0]
+
+                    valid_locs = valid_construction_locations(next_voxel, self.voxel_grid.built)
+
+                    reachable = any(a_star(robot.position, loc, self.voxel_grid.built) for loc in valid_locs)
 
             if reachable:
                 reachable_components.append(component)

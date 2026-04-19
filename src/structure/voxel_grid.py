@@ -1,5 +1,5 @@
 import random
-from src.config import GRID_SIZE, RANDOM_VOXELS, RANDOM_STRUCTURE_ORIGINS
+from src.config import GRID_SIZE, RANDOM_VOXELS, RANDOM_STRUCTURE_ORIGINS, TEST_PRESET_NUM
 from src.robots.robot import Robot
 
 
@@ -11,13 +11,13 @@ class VoxelGrid:
 
     def add_structure(self, structure_type: str):
         if structure_type == "cube":
-            self.add_cube((5, 5, 0), (4, 4, 3))
+            self.add_rectangular_prism((5, 5, 0), (4, 4, 4))
 
         elif structure_type == "pyramid":
             self.add_pyramid((5, 5, 0), 5)
 
         elif structure_type == "wall":
-            self.add_wall((5, 5, 0), 6, 4)
+            self.add_rectangular_prism((5, 5, 0), (6, 1, 4))
 
         elif structure_type == "overhang":
             self.add_overhang((5, 5, 0), 10, 20)
@@ -28,11 +28,14 @@ class VoxelGrid:
         elif structure_type == "random":
             self.add_random_connected(RANDOM_VOXELS)
 
+        elif structure_type == "preset_test":
+            self.add_preset(TEST_PRESET_NUM)
+
     # ------------------------
     # PRESETS
     # ------------------------
 
-    def add_cube(self, origin: tuple[int, int, int], size: tuple[int, int, int]):
+    def add_rectangular_prism(self, origin: tuple[int, int, int], size: tuple[int, int, int]):
         ox, oy, oz = origin
         sx, sy, sz = size
 
@@ -48,13 +51,6 @@ class VoxelGrid:
             for x in range(size - z):
                 for y in range(size - z):
                     self.target.add((ox + x, oy + y, oz + z))
-
-    def add_wall(self, origin: tuple[int, int, int], width: int, height: int):
-        ox, oy, oz = origin
-
-        for x in range(width):
-            for z in range(height):
-                self.target.add((ox + x, oy, oz + z))
 
     def add_overhang(self, origin: tuple[int, int, int], height: int = 3, arm_length: int = 3):
         ox, oy, oz = origin
@@ -154,6 +150,23 @@ class VoxelGrid:
                         break
 
         print(f"Generated structure with {len(self.target)} voxels from {num_origins} origins")
+
+    def add_preset(self, preset_num: int):
+        if preset_num == 1:
+            self.add_rectangular_prism((0, 5, 0), (5, 5, 5))
+            self.add_rectangular_prism((10, 0, 0), (5, 5, 5))
+
+        elif preset_num == 2:
+            print()
+
+        elif preset_num == 3:
+            print()
+
+        elif preset_num == 4:
+            print()
+
+        elif preset_num == 5:
+            print()
 
     def can_build(self,
                   voxel: tuple[int, int, int],

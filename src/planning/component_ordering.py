@@ -57,7 +57,7 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
         # Find all voxels that violate the constraint
         violations = []
 
-        find_violations(voxels_in_component, ordering_graph)
+        violations = find_violations(voxels_in_component, ordering_graph)
 
         if not violations:
             break
