@@ -372,6 +372,7 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
             voxels=set(tear_order),
             is_scaffold_teardown=True,
             scaffold_for=target_node,
+            # scaffold_build=scaffold_build_id,
             scaffold_order=tear_order
         )
 

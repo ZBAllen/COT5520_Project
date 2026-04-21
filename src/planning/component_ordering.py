@@ -1,3 +1,5 @@
+import random
+
 import networkx as nx
 
 from src.utils import bfs_component_voxels_from_starting_voxels_set, neighbors_3d
@@ -14,6 +16,7 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
     normal_predecessor_voxels = set()
     scaffold_predecessor_voxels = set()
 
+    # Get the set of voxels in predecessor components separated by normal structure voxels and scaffolding voxels.
     for predecessor_component_id in dependency_graph.predecessors(current_component_id):
         pred_voxels = dependency_graph.nodes[predecessor_component_id]['voxels']
 
@@ -30,6 +33,7 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
 
     starting_voxels = []
 
+    # Find the voxels in the component that would work as a valid starting voxel when building.
     for voxel in voxels_in_component:
         neighbors = neighbors_3d(voxel)
 
@@ -40,9 +44,9 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
         starting_voxels = [v for v in voxels_in_component if v[2] == 0]
 
     if not starting_voxels:
-        starting_voxels = [next(iter(voxels_in_component))]
+        raise RuntimeError("The structure given has a component that is not attached to any other component nor ground.")
 
-    # Step 1: BFS to create initial ordering graph [1]
+    # Step 1: BFS to create initial ordering graph
     bfs_order = bfs_component_voxels_from_starting_voxels_set(starting_voxels, voxels_in_component)
 
     # Create ordering graph: edge from earlier to later voxel in BFS order
@@ -59,28 +63,21 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
                 if bfs_position[neighbor] > i:
                     ordering_graph.add_edge(voxel, neighbor)
 
-    # Step 2: Fix no-tight-building constraint violations [1]
+    # Step 2: Fix no-tight-building constraint violations
     # Repeatedly find violating voxels and flip their incoming edges
-    max_iterations = len(voxels_in_component) * 10
-    iteration = 0
-
-    while iteration < max_iterations:
-        iteration += 1
-
+    while True:
         # Find all voxels that violate the constraint
-        violations = []
-
         violations = find_violations(voxels_in_component, ordering_graph)
 
         if not violations:
             break
 
-        # Pick violation with minimum (z, y, x) for determinism [1]
+        # Pick violation with minimum (z, y, x) for determinism
         violating_voxel = min(violations, key=lambda v: (v[2], v[1], v[0]))
 
         neighbors = neighbors_3d(violating_voxel)
 
-        # Find axis with violation and flip edges [1]
+        # Find axis with violation and flip edges
         axis_pairs = [(0, 1), (2, 3), (4, 5)]
 
         for idx1, idx2 in axis_pairs:
@@ -88,12 +85,14 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
 
             if n1 in voxels_in_component and n2 in voxels_in_component:
                 if ordering_graph.has_edge(n1, violating_voxel) and ordering_graph.has_edge(n2, violating_voxel):
-                    # Flip: remove incoming edges, add outgoing edges [1]
-                    ordering_graph.remove_edge(n1, violating_voxel)
-                    ordering_graph.remove_edge(n2, violating_voxel)
+                    # Flip: remove one of the incoming edges, add a new outgoing edge
+                    if random.randint(0, 1) == 0:
+                        ordering_graph.remove_edge(n1, violating_voxel)
+                        ordering_graph.add_edge(violating_voxel, n1)
 
-                    ordering_graph.add_edge(violating_voxel, n1)
-                    ordering_graph.add_edge(violating_voxel, n2)
+                    else:
+                        ordering_graph.remove_edge(n2, violating_voxel)
+                        ordering_graph.add_edge(violating_voxel, n2)
 
                     break
 

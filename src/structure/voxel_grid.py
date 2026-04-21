@@ -153,17 +153,176 @@ class VoxelGrid:
 
     def add_preset(self, preset_num: int):
         if preset_num == 1:
+            # Two cubes
+
             self.add_rectangular_prism((0, 5, 0), (5, 5, 5))
             self.add_rectangular_prism((10, 0, 0), (5, 5, 5))
 
         elif preset_num == 2:
-            print()
+            # A double-link chain
+
+            self.target.add((5, 5, 0))
+            self.target.add((5, 5, 1))
+            self.target.add((5, 4, 1))
+            self.target.add((5, 6, 1))
+            self.target.add((5, 4, 2))
+            self.target.add((5, 6, 2))
+            self.target.add((5, 4, 3))
+            self.target.add((5, 5, 3))
+            self.target.add((5, 6, 3))
+            self.target.add((5, 4, 4))
+            self.target.add((5, 6, 4))
+            self.target.add((5, 4, 5))
+            self.target.add((5, 5, 5))
+            self.target.add((5, 6, 5))
+            self.target.add((5, 5, 6))
 
         elif preset_num == 3:
-            print()
+            # A v-shaped structure
+
+            self.target.add((5, 5, 0))
+            self.target.add((5, 5, 1))
+            self.target.add((5, 4, 1))
+            self.target.add((5, 6, 1))
+            self.target.add((5, 4, 2))
+            self.target.add((5, 6, 2))
+            self.target.add((5, 3, 2))
+            self.target.add((5, 7, 2))
+            self.target.add((5, 3, 3))
+            self.target.add((5, 7, 3))
+            self.target.add((5, 2, 3))
+            self.target.add((5, 8, 3))
 
         elif preset_num == 4:
-            print()
+            # Two cube outlines
+
+            self.target.add((5, 5, 0))
+            self.target.add((6, 5, 0))
+            self.target.add((7, 5, 0))
+            self.target.add((8, 5, 0))
+            self.target.add((9, 5, 0))
+            self.target.add((10, 5, 0))
+
+            self.target.add((10, 6, 0))
+            self.target.add((10, 7, 0))
+            self.target.add((10, 8, 0))
+            self.target.add((10, 9, 0))
+            self.target.add((10, 10, 0))
+
+            self.target.add((9, 10, 0))
+            self.target.add((8, 10, 0))
+            self.target.add((7, 10, 0))
+            self.target.add((6, 10, 0))
+            self.target.add((5, 10, 0))
+
+            self.target.add((5, 9, 0))
+            self.target.add((5, 8, 0))
+            self.target.add((5, 7, 0))
+            self.target.add((5, 6, 0))
+
+            self.target.add((5, 5, 0))
+            self.target.add((5, 5, 1))
+            self.target.add((5, 5, 2))
+            self.target.add((5, 5, 3))
+            self.target.add((5, 5, 4))
+            self.target.add((5, 5, 5))
+
+            self.target.add((10, 5, 0))
+            self.target.add((10, 5, 1))
+            self.target.add((10, 5, 2))
+            self.target.add((10, 5, 3))
+            self.target.add((10, 5, 4))
+            self.target.add((10, 5, 5))
+
+            self.target.add((10, 10, 0))
+            self.target.add((10, 10, 1))
+            self.target.add((10, 10, 2))
+            self.target.add((10, 10, 3))
+            self.target.add((10, 10, 4))
+            self.target.add((10, 10, 5))
+
+            self.target.add((5, 10, 0))
+            self.target.add((5, 10, 1))
+            self.target.add((5, 10, 2))
+            self.target.add((5, 10, 3))
+            self.target.add((5, 10, 4))
+            self.target.add((5, 10, 5))
+
+            self.target.add((5, 5, 5))
+            self.target.add((6, 5, 5))
+            self.target.add((7, 5, 5))
+            self.target.add((8, 5, 5))
+            self.target.add((9, 5, 5))
+            self.target.add((10, 5, 5))
+
+            self.target.add((10, 6, 5))
+            self.target.add((10, 7, 5))
+            self.target.add((10, 8, 5))
+            self.target.add((10, 9, 5))
+            self.target.add((10, 10, 5))
+
+            self.target.add((9, 10, 5))
+            self.target.add((8, 10, 5))
+            self.target.add((7, 10, 5))
+            self.target.add((6, 10, 5))
+            self.target.add((5, 10, 5))
+
+            self.target.add((5, 9, 5))
+            self.target.add((5, 8, 5))
+            self.target.add((5, 7, 5))
+            self.target.add((5, 6, 5))
+
+            self.target.add((5, 5, 5))
+            self.target.add((5, 5, 6))
+            self.target.add((5, 5, 7))
+            self.target.add((5, 5, 8))
+            self.target.add((5, 5, 9))
+            self.target.add((5, 5, 10))
+
+            self.target.add((10, 5, 5))
+            self.target.add((10, 5, 6))
+            self.target.add((10, 5, 7))
+            self.target.add((10, 5, 8))
+            self.target.add((10, 5, 9))
+            self.target.add((10, 5, 10))
+
+            self.target.add((10, 10, 5))
+            self.target.add((10, 10, 6))
+            self.target.add((10, 10, 7))
+            self.target.add((10, 10, 8))
+            self.target.add((10, 10, 9))
+            self.target.add((10, 10, 10))
+
+            self.target.add((5, 10, 5))
+            self.target.add((5, 10, 6))
+            self.target.add((5, 10, 7))
+            self.target.add((5, 10, 8))
+            self.target.add((5, 10, 9))
+            self.target.add((5, 10, 10))
+
+            self.target.add((5, 5, 10))
+            self.target.add((6, 5, 10))
+            self.target.add((7, 5, 10))
+            self.target.add((8, 5, 10))
+            self.target.add((9, 5, 10))
+            self.target.add((10, 5, 10))
+
+            self.target.add((10, 6, 10))
+            self.target.add((10, 7, 10))
+            self.target.add((10, 8, 10))
+            self.target.add((10, 9, 10))
+            self.target.add((10, 10, 10))
+
+            self.target.add((9, 10, 10))
+            self.target.add((8, 10, 10))
+            self.target.add((7, 10, 10))
+            self.target.add((6, 10, 10))
+            self.target.add((5, 10, 10))
+
+            self.target.add((5, 9, 10))
+            self.target.add((5, 8, 10))
+            self.target.add((5, 7, 10))
+            self.target.add((5, 6, 10))
 
         elif preset_num == 5:
             print()
@@ -228,6 +387,6 @@ class VoxelGrid:
         if z == 0:
             return True
 
-        print("no neighbors and not on floor")
+        print(f"no neighbors and not on floor for voxel {voxel}, comp. ordering: {component_order}")
 
         return False

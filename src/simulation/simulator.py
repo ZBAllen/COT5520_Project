@@ -19,7 +19,7 @@ class Simulator:
         self.component_dependency_graph = None
         self.generate_structures_and_graph()
 
-        self.voxels_available = len(self.voxel_grid.target) #+ len(self.voxel_grid.scaffold)
+        self.voxels_available = len(self.voxel_grid.target)
         self.voxels_in_transit = 0
 
         self.component_orderings = {}
@@ -330,6 +330,33 @@ class Simulator:
 
         return components
 
+    # def available_components(self):
+    #     components = []
+    #
+    #     for component in self.component_dependency_graph.nodes:
+    #         if component in self.completed_components:
+    #             continue
+    #
+    #         if self.is_teardown_component(component):
+    #             normal_ready = all(
+    #                 pred in self.completed_components
+    #                 for pred in self.component_dependency_graph.predecessors(component)
+    #             )
+    #
+    #             early_release_ready = self.scaffold_can_be_released_early(component)
+    #
+    #             if normal_ready or early_release_ready:
+    #                 components.append(component)
+    #         else:
+    #             if all(
+    #                     pred in self.completed_components
+    #                     for pred in self.component_dependency_graph.predecessors(component)
+    #             ):
+    #                 components.append(component)
+    #
+    #     random.shuffle(components)
+    #     return components
+
     def assign_component(self, robot: Robot):
         """
         Assigns the given robot to an available component.
@@ -410,3 +437,29 @@ class Simulator:
         """Returns true if the given component is a scaffold teardown node."""
 
         return self.component_dependency_graph.nodes[component].get("is_scaffold_teardown", False)
+
+    # def scaffold_can_be_released_early(self, teardown_component: int) -> bool:
+    #     node_data = self.component_dependency_graph.nodes[teardown_component]
+    #     if not node_data.get("is_scaffold_teardown", False):
+    #         return False
+    #
+    #     target_component = node_data.get("scaffold_for")
+    #     if target_component is None:
+    #         return False
+    #
+    #     # If target is already complete, teardown is obviously allowed.
+    #     if target_component in self.completed_components:
+    #         return True
+    #
+    #     # Check whether target has at least one completed non-scaffold predecessor.
+    #     for pred in self.component_dependency_graph.predecessors(target_component):
+    #         pred_data = self.component_dependency_graph.nodes[pred]
+    #
+    #         # Ignore the scaffold-build predecessor associated with this scaffold.
+    #         if pred_data.get("is_scaffold", False):
+    #             continue
+    #
+    #         if pred in self.completed_components:
+    #             return True
+    #
+    #     return False
