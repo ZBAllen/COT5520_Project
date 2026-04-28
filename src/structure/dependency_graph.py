@@ -243,8 +243,9 @@ def find_scaffolding_column_position(target_component_voxels,
 
 def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
     """
-    Augment the dependency graph with scaffold build and teardown nodes for components that have no ground-reachable
-    path without temporary support.
+    Augment the dependency graph with scaffold build and teardown nodes for the top k components that maximize:
+        1. predecessor-chain distance in the dependency graph
+        2. voxel count as a tiebreaker
 
     For each target component whose lowest voxel is above z = 0 and which has no ground-anchored predecessor path, a
     vertical scaffold column is generated.
@@ -262,7 +263,64 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
             The augmented dependency graph.
     """
 
-    # Identify ground-rooted components
+    target_node = select_scaffold_target(dependency_graph)
+
+    if target_node is None:
+        print("No eligible component found for scaffolding.")
+
+        return dependency_graph
+
+    target_voxels = dependency_graph.nodes[target_node]["voxels"]
+
+    min_z = min(voxel[2] for voxel in target_voxels)
+
+    existing_scaffold: set[tuple[int, int, int]] = set()
+
+    next_node_id = max(dependency_graph.nodes) + 1
+
+    column_xy = find_scaffolding_column_position(target_voxels, voxel_grid, existing_scaffold)
+
+    if column_xy is None:
+        print(f"Warning: Could not find valid scaffold column position for component {target_node}")
+
+        return dependency_graph
+
+    cx, cy = column_xy
+
+    vertical_column = [(cx, cy, z) for z in range(min_z + 2)]
+
+    tentative_existing = set(existing_scaffold)
+
+    for voxel in vertical_column:
+        tentative_existing.add(voxel)
+
+    arm_voxels = find_scaffold_connection_path(
+        target_component_voxels=target_voxels,
+        column_xy=column_xy,
+        min_z=min_z,
+        voxel_grid=voxel_grid,
+        existing_scaffolding=tentative_existing
+    )
+
+    if arm_voxels is None:
+        print(f"Warning: Could not find valid horizontal scaffold arm for component {target_node}.")
+
+        return dependency_graph
+
+    build_order = vertical_column + arm_voxels
+    tear_order = list(reversed(build_order))
+
+    for voxel in build_order:
+        voxel_grid.scaffold.add(voxel)
+        existing_scaffold.add(voxel)
+
+    base_voxel = (cx, cy, 0)
+
+    if no_tight_build_violated(base_voxel, voxel_grid.target):
+        print(f"Warning: Base voxel {base_voxel} violates tight-build rules.")
+
+        return dependency_graph
+
     ground_roots = set()
 
     for node in dependency_graph.nodes:
@@ -271,124 +329,169 @@ def add_scaffolding(dependency_graph: nx.DiGraph, voxel_grid: VoxelGrid):
         if any(voxel[2] == 0 for voxel in voxels):
             ground_roots.add(node)
 
-    if not ground_roots:
-        print("Warning: No ground-rooted components found. Cannot add scaffolding.")
+    anchor_node = None
 
-        return dependency_graph
+    for node in ground_roots:
+        if base_voxel in dependency_graph.nodes[node]["voxels"]:
+            anchor_node = node
 
-    # BFS to find all nodes reachable from any ground root
-    reachable = set()
+            break
 
-    queue = list(ground_roots)
+    scaffold_build_id = next_node_id
 
-    while queue:
-        current = queue.pop()
+    next_node_id += 1
 
-        if current in reachable:
-            continue
+    dependency_graph.add_node(
+        scaffold_build_id,
+        voxels=set(build_order),
+        is_scaffold=True,
+        scaffold_for=target_node,
+        scaffold_order=build_order
+    )
 
-        reachable.add(current)
+    scaffold_tear_id = next_node_id
 
-        for successor in dependency_graph.successors(current):
-            if successor not in reachable:
-                queue.append(successor)
+    next_node_id += 1
 
-    # Nodes not reachable from the ground are scaffolding candidates
-    scaffold_candidates = [node for node in dependency_graph.nodes if node not in reachable]
+    dependency_graph.add_node(
+        scaffold_tear_id,
+        voxels=set(tear_order),
+        is_scaffold_teardown=True,
+        scaffold_for=target_node,
+        scaffold_order=tear_order
+    )
 
-    # Sort by minimum z so lower floating components get scaffolding first
-    scaffold_candidates.sort(key = lambda n: min(voxel[2] for voxel in dependency_graph.nodes[n]["voxels"]))
+    dependency_graph.add_edge(scaffold_build_id, target_node)
+    dependency_graph.add_edge(target_node, scaffold_tear_id)
 
-    existing_scaffold: set[tuple[int, int, int]] = set()
+    if anchor_node is not None:
+        dependency_graph.add_edge(anchor_node, scaffold_build_id)
 
-    next_node_id = max(dependency_graph.nodes) + 1
+    print(
+        f"Scaffold added for component {target_node}: "
+        f"column at ({cx}, {cy}), z=0 to z={min_z + 2}. "
+        f"BuildNode={scaffold_build_id}, TearNode={scaffold_tear_id}."
+    )
 
-    for target_node in scaffold_candidates:
-        target_voxels = dependency_graph.nodes[target_node]["voxels"]
+    return dependency_graph
 
-        min_z = min(voxel[2] for voxel in target_voxels)
+def compute_predecessor_depths(dependency_graph: nx.DiGraph) -> dict[int, int]:
+    depth_cache = {}
 
-        if min_z == 0:
-            # Already ground-level, no scaffold needed
-            continue
+    def depth(node: int) -> int:
+        if node in depth_cache:
+            return depth_cache[node]
 
-        column_xy = find_scaffolding_column_position(target_voxels, voxel_grid, existing_scaffold)
+        preds = list(dependency_graph.predecessors(node))
+        if not preds:
+            depth_cache[node] = 0
 
-        if column_xy is None:
-            print(f"Warning: Could not find valid scaffold column position for component {target_node}.")
+        else:
+            depth_cache[node] = 1 + max(depth(pred) for pred in preds)
 
-            continue
+        return depth_cache[node]
 
-        cx, cy = column_xy
+    for node in dependency_graph.nodes:
+        depth(node)
 
-        # Build column from z = 0 up to min_z
-        build_order = [(cx, cy, z) for z in range(min_z + 2)]
-        tear_order = list(reversed(build_order))
+    return depth_cache
 
-        # Register scaffold voxels
-        for voxel in build_order:
-            voxel_grid.scaffold.add(voxel)
+def select_scaffold_target(dependency_graph: nx.DiGraph) -> int | None:
+    eligible_nodes = []
 
-            existing_scaffold.add(voxel)
+    for node in dependency_graph.nodes:
+        voxels = dependency_graph.nodes[node]["voxels"]
 
-        # The scaffold column starts at z=0 and is self-grounding.
-        # Only anchor to an existing ground root if the column's base voxel spatially conflicts with one - otherwise
-        # make it a free root.
-        base_voxel = (cx, cy, 0)
+        min_z = min(voxel[2] for voxel in voxels)
 
-        # After finding column_xy, verify no tight-build conflict with z=0 target voxels
-        if no_tight_build_violated(base_voxel, voxel_grid.target):
-            # Try another column position
-            continue
+        if min_z > 0:
+            eligible_nodes.append(node)
 
-        anchor_node = None
+    if not eligible_nodes:
+        return None
 
-        for node in ground_roots:
-            if base_voxel in dependency_graph.nodes[node]["voxels"]:
-                anchor_node = node
+    depths = compute_predecessor_depths(dependency_graph)
+
+    return max(
+        eligible_nodes,
+        key=lambda n: (
+            depths[n],
+            len(dependency_graph.nodes[n]["voxels"])
+        )
+    )
+
+def horizontal_path(start_xy: tuple[int, int], end_xy: tuple[int, int], z: int) -> list[tuple[int, int, int]]:
+    x0, y0 = start_xy
+    x1, y1 = end_xy
+
+    path = []
+
+    x, y = x0, y0
+
+    while x != x1:
+        x += 1 if x1 > x else -1
+
+        path.append((x, y, z))
+
+    while y != y1:
+        y += 1 if y1 > y else -1
+
+        path.append((x, y, z))
+
+    return path
+
+def find_scaffold_connection_path(
+    target_component_voxels,
+    column_xy: tuple[int, int],
+    min_z: int,
+    voxel_grid: VoxelGrid,
+    existing_scaffolding: set[tuple[int, int, int]]
+) -> list[tuple[int, int, int]] | None:
+    """
+    Return horizontal arm voxels that connect the top of the scaffold column
+    to the target footprint at height min_z - 1, if needed.
+    """
+
+    if min_z <= 0:
+        return []
+
+    footprint = set((x, y) for x, y, _ in target_component_voxels)
+
+    cx, cy = column_xy
+
+    if (cx, cy) in footprint:
+        return []
+
+    occupied = voxel_grid.target | existing_scaffolding
+
+    arm_z = min_z + 1
+
+    candidate_targets = sorted(
+        footprint,
+        key=lambda p: abs(p[0] - cx) + abs(p[1] - cy)
+    )
+
+    for tx, ty in candidate_targets:
+        path = horizontal_path((cx, cy), (tx, ty), arm_z)
+
+        valid = True
+
+        tentative = set(occupied)
+
+        for voxel in path:
+            if voxel in tentative:
+                valid = False
 
                 break
 
-        # Add ScaffoldBuild node
-        scaffold_build_id = next_node_id
+            if no_tight_build_violated(voxel, tentative):
+                valid = False
 
-        next_node_id += 1
+                break
 
-        dependency_graph.add_node(
-            scaffold_build_id,
-            voxels=set(build_order),
-            is_scaffold=True,
-            scaffold_for=target_node,
-            scaffold_order=build_order
-        )
+            tentative.add(voxel)
 
-        # Add ScaffoldTear node
-        scaffold_tear_id = next_node_id
+        if valid:
+            return path
 
-        next_node_id += 1
-
-        dependency_graph.add_node(
-            scaffold_tear_id,
-            voxels=set(tear_order),
-            is_scaffold_teardown=True,
-            scaffold_for=target_node,
-            # scaffold_build=scaffold_build_id,
-            scaffold_order=tear_order
-        )
-
-        # scaffold build -> target (target waits for scaffold)
-        dependency_graph.add_edge(scaffold_build_id, target_node)
-
-        # target -> scaffold tear (teardown waits for target completion)
-        dependency_graph.add_edge(target_node, scaffold_tear_id)
-
-        # Only anchor to a ground root if the base voxel is owned by one.
-        # Otherwise the scaffold build node is a free root (self-grounding at z=0).
-        if anchor_node is not None:
-            dependency_graph.add_edge(anchor_node, scaffold_build_id)
-
-        print(f"Scaffold added for component {target_node}: "
-              f"column at ({cx}, {cy}), z=0 to z={min_z - 1}. "
-              f"BuildNode={scaffold_build_id}, TearNode={scaffold_tear_id}.")
-
-    return dependency_graph
+    return None

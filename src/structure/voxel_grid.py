@@ -149,7 +149,7 @@ class VoxelGrid:
 
                         break
 
-        print(f"Generated structure with {len(self.target)} voxels from {num_origins} origins")
+        print(f"Generated structure with {len(self.target)} voxels from {num_origins} origin(s)")
 
     def add_preset(self, preset_num: int):
         if preset_num == 1:
@@ -176,6 +176,17 @@ class VoxelGrid:
             self.target.add((5, 5, 5))
             self.target.add((5, 6, 5))
             self.target.add((5, 5, 6))
+
+            self.target.add((6, 5, 6))
+            self.target.add((7, 5, 6))
+            self.target.add((8, 5, 6))
+            self.target.add((9, 5, 6))
+            self.target.add((10, 5, 6))
+            self.target.add((11, 5, 6))
+            self.target.add((12, 5, 6))
+            self.target.add((13, 5, 6))
+            self.target.add((14, 5, 6))
+            self.target.add((15, 5, 6))
 
         elif preset_num == 3:
             # A v-shaped structure
@@ -325,7 +336,90 @@ class VoxelGrid:
             self.target.add((5, 6, 10))
 
         elif preset_num == 5:
-            print()
+            self.target.add((5, 5, 0))
+            self.target.add((5, 6, 0))
+            self.target.add((6, 5, 0))
+            self.target.add((6, 6, 0))
+
+            self.target.add((5, 5, 1))
+            self.target.add((5, 6, 1))
+            self.target.add((6, 5, 1))
+            self.target.add((6, 6, 1))
+
+            self.target.add((5, 5, 2))
+            self.target.add((5, 6, 2))
+            self.target.add((6, 5, 2))
+            self.target.add((6, 6, 2))
+            self.target.add((4, 5, 2))
+            self.target.add((4, 6, 2))
+            self.target.add((7, 5, 2))
+            self.target.add((7, 6, 2))
+            self.target.add((11, 5, 2))
+            self.target.add((11, 6, 2))
+            self.target.add((12, 5, 2))
+            self.target.add((12, 6, 2))
+
+            self.target.add((3, 5, 3))
+            self.target.add((3, 6, 3))
+            self.target.add((4, 5, 3))
+            self.target.add((4, 6, 3))
+            self.target.add((7, 5, 3))
+            self.target.add((7, 6, 3))
+            self.target.add((8, 5, 3))
+            self.target.add((8, 6, 3))
+            self.target.add((10, 5, 3))
+            self.target.add((10, 6, 3))
+            self.target.add((11, 5, 3))
+            self.target.add((11, 6, 3))
+            self.target.add((12, 5, 3))
+            self.target.add((12, 6, 3))
+
+            self.target.add((2, 5, 4))
+            self.target.add((2, 6, 4))
+            self.target.add((3, 5, 4))
+            self.target.add((3, 6, 4))
+            self.target.add((8, 5, 4))
+            self.target.add((8, 6, 4))
+            self.target.add((9, 5, 4))
+            self.target.add((9, 6, 4))
+            self.target.add((10, 5, 4))
+            self.target.add((10, 6, 4))
+            self.target.add((11, 5, 4))
+            self.target.add((11, 6, 4))
+
+            self.target.add((2, 5, 5))
+            self.target.add((2, 6, 5))
+            self.target.add((3, 5, 5))
+            self.target.add((3, 6, 5))
+            self.target.add((8, 5, 5))
+            self.target.add((8, 6, 5))
+            self.target.add((9, 5, 5))
+            self.target.add((9, 6, 5))
+            self.target.add((10, 5, 5))
+            self.target.add((10, 6, 5))
+
+            self.target.add((3, 5, 6))
+            self.target.add((3, 6, 6))
+            self.target.add((4, 5, 6))
+            self.target.add((4, 6, 6))
+            self.target.add((7, 5, 6))
+            self.target.add((7, 6, 6))
+            self.target.add((8, 5, 6))
+            self.target.add((8, 6, 6))
+
+            self.target.add((4, 5, 7))
+            self.target.add((4, 6, 7))
+            self.target.add((5, 5, 7))
+            self.target.add((5, 6, 7))
+            self.target.add((6, 5, 7))
+            self.target.add((6, 6, 7))
+            self.target.add((7, 5, 7))
+            self.target.add((7, 6, 7))
+
+            self.target.add((5, 5, 8))
+            self.target.add((5, 6, 8))
+            self.target.add((6, 5, 8))
+            self.target.add((6, 6, 8))
 
     def can_build(self,
                   voxel: tuple[int, int, int],

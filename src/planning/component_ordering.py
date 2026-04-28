@@ -1,8 +1,7 @@
 import random
-
 import networkx as nx
 
-from src.utils import bfs_component_voxels_from_starting_voxels_set, neighbors_3d
+from src.utils import bfs_component_voxels_from_starting_voxels_set, neighbors_3d, valid_construction_locations
 
 def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
                            dependency_graph: nx.DiGraph,
@@ -30,6 +29,7 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
 
     # Prefer structural predecessors over scaffold predecessors
     preferred_predecessors = normal_predecessor_voxels if normal_predecessor_voxels else predecessor_voxels
+    # preferred_predecessors = scaffold_predecessor_voxels if scaffold_predecessor_voxels else predecessor_voxels
 
     starting_voxels = []
 
@@ -40,13 +40,16 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
         if any(neighbor in preferred_predecessors for neighbor in neighbors):
             starting_voxels.append(voxel)
 
+    # If no voxels are connected to predecessor components, then get all voxels in the component that are on the ground.
     if not starting_voxels:
         starting_voxels = [v for v in voxels_in_component if v[2] == 0]
 
+    # If no valid starting voxels were found, the structure must be invalid.
     if not starting_voxels:
         raise RuntimeError("The structure given has a component that is not attached to any other component nor ground.")
 
     # Step 1: BFS to create initial ordering graph
+    # TODO: This may be the problem. The BFS is performed on the set of starting voxels. This means that the starting voxels are all added first despite them potentially causing violations later when they meet. The violations wouldn't be caught since the edges connecting the violation voxels would be from separate BFS trees and thus would not be flagged as a violation
     bfs_order = bfs_component_voxels_from_starting_voxels_set(starting_voxels, voxels_in_component)
 
     # Create ordering graph: edge from earlier to later voxel in BFS order
@@ -55,6 +58,7 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
     for voxel in bfs_order:
         ordering_graph.add_node(voxel)
 
+    # Adds edges between voxels if the first voxel is before the second voxel in the BFS ordering.
     bfs_position = {voxel: i for i, voxel in enumerate(bfs_order)}
 
     for i, voxel in enumerate(bfs_order):
@@ -96,6 +100,68 @@ def order_component_voxels(voxels_in_component: set[tuple[int, int, int]],
 
                     break
 
+            # if n1 in voxels_in_component and n2 in voxels_in_component and bfs_position[n1] < bfs_position[violating_voxel] and bfs_position[n2] < bfs_position[violating_voxel]:
+            #     # Check if violating voxel is not built from the neighbors that are part of the violation
+            #     if not ordering_graph.has_edge(n1, violating_voxel) and not ordering_graph.has_edge(n2, violating_voxel):
+            #         # Remove edge to violating voxel and add edge from one of the neighbors and change BFS ordering.
+            #         preds = list(ordering_graph.predecessors(violating_voxel))
+            #
+            #         if preds:
+            #             p = preds[0]
+            #
+            #             ordering_graph.remove_edge(p, violating_voxel)
+            #
+            #             new_pred = random.choice([n1, n2])
+            #
+            #             ordering_graph.add_edge(new_pred, violating_voxel)
+            #
+            #             # Swap their BFS ordering
+            #             violate_pos = bfs_position[violating_voxel]
+            #
+            #             bfs_position[violating_voxel] = bfs_position[new_pred]
+            #             bfs_position[new_pred] = violate_pos
+            #
+            #     elif ordering_graph.has_edge(n1, violating_voxel) and ordering_graph.has_edge(n2, violating_voxel):
+            #         neighbor = random.choice([n1, n2])
+            #
+            #         # Flip edge and swap BFS ordering
+            #         ordering_graph.remove_edge(neighbor, violating_voxel)
+            #         ordering_graph.add_edge(violating_voxel, neighbor)
+            #
+            #         # Swap their BFS ordering
+            #         violate_pos = bfs_position[violating_voxel]
+            #
+            #         bfs_position[violating_voxel] = bfs_position[neighbor]
+            #         bfs_position[neighbor] = violate_pos
+            #
+            #     elif ordering_graph.has_edge(n1, violating_voxel):
+            #         if list(ordering_graph.predecessors(n2)):
+            #             # Remove edge and add edge from violating voxel to n2
+            #
+            #         else:
+            #             #
+            #
+            #         # Flip edge and swap BFS ordering
+            #         ordering_graph.remove_edge(n1, violating_voxel)
+            #         ordering_graph.add_edge(violating_voxel, n1)
+            #
+            #         # Swap their BFS ordering
+            #         violate_pos = bfs_position[violating_voxel]
+            #
+            #         bfs_position[violating_voxel] = bfs_position[n1]
+            #         bfs_position[n1] = violate_pos
+            #
+            #     elif ordering_graph.has_edge(n2, violating_voxel):
+            #         # Flip edge and swap BFS ordering
+            #         ordering_graph.remove_edge(n2, violating_voxel)
+            #         ordering_graph.add_edge(violating_voxel, n2)
+            #
+            #         # Swap their BFS ordering
+            #         violate_pos = bfs_position[violating_voxel]
+            #
+            #         bfs_position[violating_voxel] = bfs_position[n2]
+            #         bfs_position[n2] = violate_pos
+
     # Topological sort to get final ordering
     try:
         final_ordering = list(nx.topological_sort(ordering_graph))
@@ -134,5 +200,10 @@ def find_violations(voxels_in_component: set[tuple[int, int, int]], ordering_gra
                 violations.append(voxel)
 
                 break
+
+            # if n1 in voxels_in_component and n2 in voxels_in_component and bfs_position[n1] < bfs_position[voxel] and bfs_position[n2] < bfs_position[voxel]:
+            #     violations.append(voxel)
+            #
+            #     break
 
     return violations

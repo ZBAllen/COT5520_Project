@@ -11,16 +11,16 @@ def valid_construction_locations(voxel: tuple[int, int, int], built_voxels: set[
         built_voxels: The set of voxels that have already been built.
 
     Returns:
-        The locations in the 3x3x3 grid around the target voxel that a robot can build the target voxel from.
+        The locations in the 3x3x3 grid around the target voxel (excluding the eight corners) that a robot can build
+        the target voxel from.
     """
 
     x, y, z = voxel
 
     directions = [
         (-1, 0, 0), (1, 0, 0), (0, -1, 0), (-1, -1, 0), (1, -1, 0), (0, 1, 0), (-1, 1, 0), (1, 1, 0),
-        (0, 0, -1), (-1, 0, -1), (1, 0, -1), (0, -1, -1), (-1, -1, -1), (1, -1, -1), (0, 1, -1),
-        (-1, 1, -1), (1, 1, -1), (0, 0, 1), (-1, 0, 1), (1, 0, 1), (0, -1, 1), (-1, -1, 1), (1, -1, 1),
-        (0, 1, 1), (-1, 1, 1), (1, 1, 1)
+        (0, 0, -1), (-1, 0, -1), (1, 0, -1), (0, -1, -1), (0, 1, -1), (0, 0, 1), (-1, 0, 1), (1, 0, 1),
+        (0, -1, 1), (0, 1, 1)
     ]
 
     positions = [(x + dx, y + dy, z + dz) for dx, dy, dz in directions]

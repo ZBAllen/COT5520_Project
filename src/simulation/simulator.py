@@ -1,4 +1,5 @@
 import random
+import sys
 import time
 from collections import defaultdict
 import matplotlib.pyplot as plt
@@ -10,7 +11,7 @@ from src.planning.component_ordering import order_component_voxels
 from src.planning.workload import compute_component_workload
 from src.pathfinding.a_star import a_star
 from src.robots.robot import Robot
-from src.utils import valid_construction_locations
+from src.utils import valid_construction_locations, neighbors_3d
 from src.visualization.viewer import Viewer
 
 class Simulator:
@@ -37,10 +38,26 @@ class Simulator:
     def update(self):
         """Updates the state of the simulation by one step."""
 
+        # Randomize the robots
         bots = self.robots.copy()
         random.shuffle(bots)
 
         for robot in bots:
+            # If the robot is floating due to scaffolding deconstruction, drop them.
+            if robot.position[2] > 0:
+                neighbors = neighbors_3d(robot.position)
+
+                if all(neighbor not in self.voxel_grid.built for neighbor in neighbors):
+                    rx, ry, rz = robot.position
+
+                    while neighbors[5] not in self.voxel_grid.built and neighbors[5][2] != 0:
+                        rz -= 1
+
+                        robot.position = (rx, ry, rz)
+
+                        neighbors = neighbors_3d(robot.position)
+
+            # Determine if the robot is assigned to a teardown component or not.
             if robot.component is not None and self.is_teardown_component(robot.component):
                 self.update_teardown_robot(robot)
 
@@ -52,33 +69,7 @@ class Simulator:
 
         # If robot doesn't have a voxel, send to voxel depot
         if not robot.has_voxel:
-            if self.voxels_available > 0:
-                if robot.position != DEPOT_POS:
-                    if not robot.path:
-                        robot.path = a_star(robot.position, DEPOT_POS, self.voxel_grid.built)
-
-                    if robot.path:
-                        robot.step()
-
-                        self.total_steps += 1
-
-                else:
-                    # At depot, pick up voxel
-                    self.pickup_voxel(robot)
-
-                    robot.component = None
-                    robot.voxel_index = 0  # TODO: Do you need to set voxel_index to 0 here? It gets set to 0 in assign when a component becomes available.
-
-            else:
-                # No more voxels available, return to the voxel depot and wait
-                if robot.position != DEPOT_POS:
-                    if not robot.path:
-                        robot.path = a_star(robot.position, DEPOT_POS, self.voxel_grid.built)
-
-                    if robot.path:
-                        robot.step()
-
-                        self.total_steps += 1
+            self.send_robot_to_depot(robot)
 
             return  # Move on to next robot
 
@@ -245,9 +236,15 @@ class Simulator:
 
                 time.sleep(STEP_DELAY)
 
-        except (KeyboardInterrupt, Exception):
+        except KeyboardInterrupt:
             print("\nClosing visualization...")
             plt.close('all')
+
+        except Exception as e:
+            print(f"\nERROR! Closing visualization:\n{e}")
+            plt.close('all')
+
+            sys.exit(1)
 
         print("Done")
 
@@ -255,11 +252,18 @@ class Simulator:
         try:
             while True:
                 self.viewer.draw(self.voxel_grid, self.robots, self.voxels_available, self.voxels_in_transit, self.total_steps)
+
                 plt.pause(0.01)
 
-        except (KeyboardInterrupt, Exception):
+        except KeyboardInterrupt:
             print("\nClosing visualization...")
             plt.close('all')
+
+        except Exception as e:
+            print(f"\nERROR! Closing visualization:\n{e}")
+            plt.close('all')
+
+            sys.exit(1)
 
 
     ##################### Helper functions #####################
@@ -306,6 +310,8 @@ class Simulator:
             self.component_orderings[component] = component_voxel_build_order
             self.component_sizes[component] = len(component_voxels)
 
+            print(f"Ordering: {component_voxel_build_order}")
+
             if not component_voxel_build_order:
                 print(f"\nDEBUG: Component {component} has empty ordering!")
                 print(f"  Voxels in component: {component_voxels}")
@@ -313,6 +319,22 @@ class Simulator:
 
             else:
                 print(f"\nDEBUG: Component {component} ordering successful. {len(component_voxel_build_order)} voxels ordered.")
+
+    # def available_components(self):
+    #     """Returns the set of components that are not completed yet and are reachable by predecessor components."""
+    #
+    #     components = []
+    #
+    #     for component in self.component_dependency_graph.nodes:
+    #         if component in self.completed_components:
+    #             continue
+    #
+    #         if all(comp in self.completed_components for comp in self.component_dependency_graph.predecessors(component)):
+    #             components.append(component)
+    #
+    #     random.shuffle(components)
+    #
+    #     return components
 
     def available_components(self):
         """Returns the set of components that are not completed yet and are reachable by predecessor components."""
@@ -323,39 +345,28 @@ class Simulator:
             if component in self.completed_components:
                 continue
 
-            if all(comp in self.completed_components for comp in self.component_dependency_graph.predecessors(component)):
-                components.append(component)
+            if self.is_teardown_component(component):
+                normal_ready = all(
+                    pred in self.completed_components
+                    for pred in self.component_dependency_graph.predecessors(component)
+                )
+
+                early_release_ready = self.scaffold_can_be_released_early(component)
+
+                if normal_ready or early_release_ready:
+                    components.append(component)
+
+                    self.completed_components.add(self.component_dependency_graph.nodes[component].get("scaffold_for"))
+            else:
+                if all(
+                        pred in self.completed_components
+                        for pred in self.component_dependency_graph.predecessors(component)
+                ):
+                    components.append(component)
 
         random.shuffle(components)
 
         return components
-
-    # def available_components(self):
-    #     components = []
-    #
-    #     for component in self.component_dependency_graph.nodes:
-    #         if component in self.completed_components:
-    #             continue
-    #
-    #         if self.is_teardown_component(component):
-    #             normal_ready = all(
-    #                 pred in self.completed_components
-    #                 for pred in self.component_dependency_graph.predecessors(component)
-    #             )
-    #
-    #             early_release_ready = self.scaffold_can_be_released_early(component)
-    #
-    #             if normal_ready or early_release_ready:
-    #                 components.append(component)
-    #         else:
-    #             if all(
-    #                     pred in self.completed_components
-    #                     for pred in self.component_dependency_graph.predecessors(component)
-    #             ):
-    #                 components.append(component)
-    #
-    #     random.shuffle(components)
-    #     return components
 
     def assign_component(self, robot: Robot):
         """
@@ -377,7 +388,7 @@ class Simulator:
 
         reachable_components = []
 
-        # Find the set of components that are reachable
+        # Find the set of components that are reachable via A*
         for component in available_comps:
             if not self.component_orderings[component]:
                 continue
@@ -411,17 +422,17 @@ class Simulator:
 
             return
 
-        best_component = max(reachable_components, key=lambda comp: compute_component_workload(self.component_dependency_graph, comp, self.component_sizes, self.num_robots_assigned_to_components))
+        # best_component = max(reachable_components, key=lambda comp: compute_component_workload(self.component_dependency_graph, comp, self.component_sizes, self.num_robots_assigned_to_components))
 
-        # best_component = random.choice(reachable_components)
+        best_component = random.choice(reachable_components)
 
         robot.component = best_component
+
         print(f"{robot.id} says: I've been assigned to component {robot.component}")
+
         robot.voxel_index = 0
 
         self.num_robots_assigned_to_components[best_component] += 1
-
-        # print(f"Robot {robot.id}: Assigned to component {best_component}")
 
     def pickup_voxel(self, robot: Robot):
         robot.has_voxel = True
@@ -438,28 +449,49 @@ class Simulator:
 
         return self.component_dependency_graph.nodes[component].get("is_scaffold_teardown", False)
 
-    # def scaffold_can_be_released_early(self, teardown_component: int) -> bool:
-    #     node_data = self.component_dependency_graph.nodes[teardown_component]
-    #     if not node_data.get("is_scaffold_teardown", False):
-    #         return False
-    #
-    #     target_component = node_data.get("scaffold_for")
-    #     if target_component is None:
-    #         return False
-    #
-    #     # If target is already complete, teardown is obviously allowed.
-    #     if target_component in self.completed_components:
-    #         return True
-    #
-    #     # Check whether target has at least one completed non-scaffold predecessor.
-    #     for pred in self.component_dependency_graph.predecessors(target_component):
-    #         pred_data = self.component_dependency_graph.nodes[pred]
-    #
-    #         # Ignore the scaffold-build predecessor associated with this scaffold.
-    #         if pred_data.get("is_scaffold", False):
-    #             continue
-    #
-    #         if pred in self.completed_components:
-    #             return True
-    #
-    #     return False
+    def scaffold_can_be_released_early(self, teardown_component: int) -> bool:
+        node_data = self.component_dependency_graph.nodes[teardown_component]
+
+        if not node_data.get("is_scaffold_teardown", False):
+            return False
+
+        target_component = node_data.get("scaffold_for")
+
+        if target_component is None:
+            return False
+
+        # If target is already complete, teardown is obviously allowed.
+        if target_component in self.completed_components:
+            return True
+
+        # Check whether target has at least one completed non-scaffold predecessor.
+        for pred in self.component_dependency_graph.predecessors(target_component):
+            pred_data = self.component_dependency_graph.nodes[pred]
+
+            # Ignore the scaffold-build predecessor associated with this scaffold.
+            if pred_data.get("is_scaffold", False):
+                continue
+
+            if pred in self.completed_components:
+                return True
+
+        return False
+
+    def send_robot_to_depot(self, robot: Robot):
+        if robot.position != DEPOT_POS:
+            if not robot.path:
+                robot.path = a_star(robot.position, DEPOT_POS, self.voxel_grid.built)
+
+            if robot.path:
+                robot.step()
+
+                self.total_steps += 1
+
+        elif self.voxels_available > 0:
+            # At depot, pick up voxel
+            self.pickup_voxel(robot)
+
+            robot.component = None
+            robot.voxel_index = 0  # TODO: Do you need to set voxel_index to 0 here? It gets set to 0 in assign when a component becomes available.
+
+        # If no more voxels available, stay at voxel depot and wait
